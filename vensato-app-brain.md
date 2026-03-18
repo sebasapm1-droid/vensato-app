@@ -204,7 +204,7 @@ Al registrarse, se crea automáticamente una fila en la tabla `profiles` (trigge
 - Número de propiedades activas
 
 **Secciones:**
-- Gráfico de ingresos últimos 6 meses (Recharts, color `brand-primary`)
+- Gráfico de ingresos últimos 6 meses, editable para vista de 12 meses (Recharts, color `brand-primary`)
 - Lista de cobros próximos a vencer (siguiente semana)
 - Alertas activas (IPC, predial, contratos por vencer)
 - Acceso rápido: "+ Propiedad", "+ Cobro", "Ver reportes"
