@@ -7,10 +7,24 @@ import { NextResponse } from "next/server";
 import { S3Client, PutBucketCorsCommand, GetBucketCorsCommand } from "@aws-sdk/client-s3";
 
 export async function GET(): Promise<NextResponse> {
-  const accountId       = process.env.CLOUDFLARE_ACCOUNT_ID!;
-  const bucketName      = process.env.R2_BUCKET_NAME!;
-  const accessKeyId     = process.env.R2_ACCESS_KEY_ID!;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY!;
+  const accountId       = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const bucketName      = process.env.R2_BUCKET_NAME;
+  const accessKeyId     = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+
+  // Debug: verificar que las vars estén presentes
+  if (!accountId || !bucketName || !accessKeyId || !secretAccessKey) {
+    return NextResponse.json({
+      ok: false,
+      error: "Faltan variables de entorno",
+      debug: {
+        CLOUDFLARE_ACCOUNT_ID: accountId ? "✅ presente" : "❌ falta",
+        R2_BUCKET_NAME: bucketName ? "✅ presente" : "❌ falta",
+        R2_ACCESS_KEY_ID: accessKeyId ? "✅ presente" : "❌ falta",
+        R2_SECRET_ACCESS_KEY: secretAccessKey ? "✅ presente" : "❌ falta",
+      },
+    }, { status: 500 });
+  }
 
   const r2 = new S3Client({
     region: "auto",
