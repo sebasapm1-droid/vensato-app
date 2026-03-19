@@ -5,7 +5,8 @@ import { useAppStore } from "@/lib/store/app-store";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { User, Building2, Bell, Link, Save } from "lucide-react";
+import { User, Building2, Bell, Link, Save, Shield, Eye, EyeOff } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 
 const BANKS = ["Bancolombia", "Davivienda", "BBVA", "Banco de Bogotá", "Banco Popular", "Itaú", "Colpatria", "Lulo Bank", "Nu Bank", "Nequi", "Daviplata", "Ualá", "Otro"];
@@ -17,6 +18,9 @@ export default function ConfiguracionPage() {
   const [form, setForm] = useState({ ...userConfig });
   const [notifs, setNotifs] = useState({ rentDue: true, contractExpiry: true, maintenance: false, reports: true });
   const [saving, setSaving] = useState(false);
+  const [pwForm, setPwForm] = useState({ newPassword: "", confirm: "" });
+  const [showPw, setShowPw] = useState(false);
+  const [savingPw, setSavingPw] = useState(false);
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -31,10 +35,33 @@ export default function ConfiguracionPage() {
     }
   }
 
+  async function changePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (pwForm.newPassword.length < 8) {
+      toast.error("La contraseña debe tener al menos 8 caracteres.");
+      return;
+    }
+    if (pwForm.newPassword !== pwForm.confirm) {
+      toast.error("Las contraseñas no coinciden.");
+      return;
+    }
+    setSavingPw(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.updateUser({ password: pwForm.newPassword });
+    setSavingPw(false);
+    if (error) {
+      toast.error("No se pudo cambiar la contraseña.", { description: error.message });
+      return;
+    }
+    setPwForm({ newPassword: "", confirm: "" });
+    toast.success("Contraseña actualizada", { description: "Te enviamos una confirmación a tu correo." });
+  }
+
   const tabs = [
     { key: "profile", label: "Perfil y Facturación", icon: <User className="h-4 w-4" /> },
     { key: "bank", label: "Datos Bancarios", icon: <Building2 className="h-4 w-4" /> },
     { key: "notifs", label: "Notificaciones", icon: <Bell className="h-4 w-4" /> },
+    { key: "security", label: "Seguridad", icon: <Shield className="h-4 w-4" /> },
     { key: "integrations", label: "Integraciones", icon: <Link className="h-4 w-4" /> },
   ];
 
@@ -183,6 +210,51 @@ export default function ConfiguracionPage() {
           <Button onClick={() => toast.success("Preferencias guardadas.")} className="mt-5 bg-vensato-brand-primary hover:bg-[#5C7D6E] text-white flex items-center">
             <Save className="mr-2 h-4 w-4" /> Guardar Preferencias
           </Button>
+        </Card>
+      )}
+
+      {/* Security Tab */}
+      {active === "security" && (
+        <Card className="p-6 border-vensato-border-subtle bg-vensato-surface shadow-sm rounded-xl">
+          <h3 className="font-heading font-bold text-lg text-vensato-text-main mb-1">Cambiar Contraseña</h3>
+          <p className="text-sm text-vensato-text-secondary mb-5">Al guardar, recibirás una confirmación en tu correo electrónico.</p>
+          <form onSubmit={changePassword} className="space-y-4 max-w-sm">
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-vensato-text-main">Nueva contraseña</label>
+              <div className="relative">
+                <Input
+                  type={showPw ? "text" : "password"}
+                  placeholder="Mínimo 8 caracteres"
+                  value={pwForm.newPassword}
+                  onChange={e => setPwForm(f => ({ ...f, newPassword: e.target.value }))}
+                  disabled={savingPw}
+                  className="bg-vensato-base border-vensato-border-subtle h-10 pr-10"
+                  autoComplete="new-password"
+                />
+                <button type="button" onClick={() => setShowPw(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-vensato-text-secondary hover:text-vensato-text-main">
+                  {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-vensato-text-main">Confirmar contraseña</label>
+              <Input
+                type={showPw ? "text" : "password"}
+                placeholder="Repite la contraseña"
+                value={pwForm.confirm}
+                onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))}
+                disabled={savingPw}
+                className="bg-vensato-base border-vensato-border-subtle h-10"
+                autoComplete="new-password"
+              />
+            </div>
+            <Button type="submit" disabled={savingPw || !pwForm.newPassword || !pwForm.confirm}
+              className="bg-vensato-brand-primary hover:bg-[#5C7D6E] text-white flex items-center">
+              <Save className="mr-2 h-4 w-4" />
+              {savingPw ? "Guardando..." : "Cambiar contraseña"}
+            </Button>
+          </form>
         </Card>
       )}
 

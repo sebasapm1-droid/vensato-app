@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { login } from "@/app/actions/auth";
 import { toast } from "sonner";
 import { Eye, EyeOff } from "lucide-react";
+import { GoogleButton } from "@/components/auth/google-button";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -117,6 +118,17 @@ export default function LoginPage() {
           )}
         </Button>
       </form>
+
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t border-vensato-border-subtle" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-vensato-surface px-2 text-vensato-text-secondary">o</span>
+        </div>
+      </div>
+
+      <GoogleButton label="Continuar con Google" />
 
       <p className="text-center text-sm text-vensato-text-secondary mt-6">
         ¿Aún no tienes cuenta?{" "}
