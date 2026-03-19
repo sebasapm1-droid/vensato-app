@@ -39,31 +39,17 @@ export async function GET(): Promise<NextResponse> {
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucketName}/cors`;
 
   try {
-    const res = await fetch(url, {
-      method: "PUT",
-      headers: {
-        "Authorization": `Bearer ${apiToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ rules: corsRules }),
-    });
-
-    const data = await res.json() as { success: boolean; errors?: unknown[] };
-
-    if (!res.ok || !data.success) {
-      return NextResponse.json({ ok: false, error: "Cloudflare rechazó la petición", details: data }, { status: 500 });
-    }
-
-    // Verificar que quedó guardado
+    // Primero: GET para ver qué formato usa Cloudflare
     const getRes = await fetch(url, {
       headers: { "Authorization": `Bearer ${apiToken}` },
     });
-    const saved = await getRes.json();
+    const getCurrent = await getRes.json();
 
     return NextResponse.json({
-      ok: true,
-      message: "CORS configurado correctamente. Ya puedes eliminar este endpoint.",
-      corsRules: saved,
+      debug: true,
+      status: getRes.status,
+      currentCors: getCurrent,
+      note: "Este es el estado actual del CORS. Revisalo para entender el formato.",
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Error desconocido";
