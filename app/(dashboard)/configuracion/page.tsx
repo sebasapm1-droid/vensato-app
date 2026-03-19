@@ -5,7 +5,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { User, Building2, Bell, Link, Save, Shield, Eye, EyeOff } from "lucide-react";
+import { Building2, Save, Eye, EyeOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 
@@ -58,11 +58,11 @@ export default function ConfiguracionPage() {
   }
 
   const tabs = [
-    { key: "profile", label: "Perfil y Facturación", icon: <User className="h-4 w-4" /> },
-    { key: "bank", label: "Datos Bancarios", icon: <Building2 className="h-4 w-4" /> },
-    { key: "notifs", label: "Notificaciones", icon: <Bell className="h-4 w-4" /> },
-    { key: "security", label: "Seguridad", icon: <Shield className="h-4 w-4" /> },
-    { key: "integrations", label: "Integraciones", icon: <Link className="h-4 w-4" /> },
+    { key: "profile", label: "Perfil y Facturación" },
+    { key: "bank", label: "Datos Bancarios" },
+    { key: "notifs", label: "Notificaciones" },
+    { key: "security", label: "Seguridad" },
+    { key: "integrations", label: "Integraciones" },
   ];
 
   return (
@@ -76,8 +76,8 @@ export default function ConfiguracionPage() {
       <div className="flex space-x-1 border-b border-vensato-border-subtle pb-px overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {tabs.map(t => (
           <button key={t.key} onClick={() => setActive(t.key)}
-            className={`flex items-center space-x-2 px-4 py-2 font-medium text-sm whitespace-nowrap transition-colors ${active === t.key ? "text-vensato-brand-primary border-b-2 border-vensato-brand-primary" : "text-vensato-text-secondary hover:text-vensato-text-main"}`}>
-            {t.icon}<span>{t.label}</span>
+            className={`px-3 py-2 font-medium text-sm whitespace-nowrap transition-colors ${active === t.key ? "text-vensato-brand-primary border-b-2 border-vensato-brand-primary" : "text-vensato-text-secondary hover:text-vensato-text-main"}`}>
+            {t.label}
           </button>
         ))}
       </div>
