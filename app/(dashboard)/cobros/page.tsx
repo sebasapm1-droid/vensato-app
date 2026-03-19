@@ -5,44 +5,76 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import { mockCharges, formatCOP } from "@/lib/utils/mock-data";
-import { Plus, MoreHorizontal, ArrowDownToLine, Send, X } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useAppStore } from "@/lib/store/app-store";
+import { Plus, ArrowDownToLine, Send, MoreHorizontal, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { downloadPDF } from "@/lib/utils/pdf-download";
+import { CuentaDeCobro } from "@/components/pdf/CuentaDeCobro";
+import React from "react";
 
 type Tab = "pending" | "overdue" | "paid" | "all";
+const STATUS_LABELS = { pending: "Pendiente", paid: "Pagado", overdue: "Vencido" };
+const STATUS_STYLES = {
+  paid: "bg-vensato-success/10 text-vensato-success border-vensato-success/20",
+  pending: "bg-vensato-border-subtle/50 text-vensato-text-main border-vensato-border-subtle",
+  overdue: "bg-red-100 text-red-700 border-red-200",
+};
 
 export default function CobrosPage() {
+  const { charges, addCharge, updateChargeStatus, tenants, userConfig } = useAppStore();
   const [activeTab, setActiveTab] = useState<Tab>("pending");
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ tenant: "", concept: "", amount: "", dueDate: "" });
+  const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [form, setForm] = useState({ tenantId: "", concept: "", amount: "", dueDate: "" });
 
-  const filtered = mockCharges.filter(c => {
-    if (activeTab === "all") return true;
-    if (activeTab === "pending") return c.status === "pending";
-    if (activeTab === "overdue") return c.status === "overdue";
-    if (activeTab === "paid") return c.status === "paid";
-    return true;
-  });
-
+  const filtered = charges.filter(c => activeTab === "all" ? true : c.status === activeTab);
   const tabs: { key: Tab; label: string }[] = [
-    { key: "pending", label: "Pendientes" },
-    { key: "overdue", label: `Vencidos (${mockCharges.filter(c => c.status === "overdue").length})` },
+    { key: "pending", label: `Pendientes (${charges.filter(c => c.status === "pending").length})` },
+    { key: "overdue", label: `Vencidos (${charges.filter(c => c.status === "overdue").length})` },
     { key: "paid", label: "Pagados" },
     { key: "all", label: "Todos" },
   ];
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    toast.success("Cobro registrado.", { description: "Pendiente de integración con base de datos." });
+    const tenant = tenants.find(t => t.id === form.tenantId);
+    if (!tenant) { toast.error("Selecciona un inquilino."); return; }
+    addCharge({
+      tenantId: tenant.id, tenant: tenant.fullName, property: tenant.property,
+      concept: form.concept, amount: Number(form.amount), dueDate: form.dueDate, status: "pending",
+    });
+    toast.success("Cobro creado exitosamente.");
     setShowModal(false);
-    setForm({ tenant: "", concept: "", amount: "", dueDate: "" });
+    setForm({ tenantId: "", concept: "", amount: "", dueDate: "" });
   }
 
+  async function handleDownload(c: typeof charges[0]) {
+    const tenantData = tenants.find(t => t.id === c.tenantId);
+    setDownloading(c.id);
+    try {
+      await downloadPDF(
+        React.createElement(CuentaDeCobro, {
+          charge: c,
+          tenant: { cedula: tenantData?.cedula, email: tenantData?.email, phone: tenantData?.phone },
+          owner: userConfig,
+        }),
+        `CuentaCobro_${c.tenant.replace(/\s+/g, "_")}_${c.dueDate}.pdf`
+      );
+      toast.success("Cuenta de cobro descargada.");
+    } catch (err) {
+      toast.error("Error al generar el PDF.");
+      console.error(err);
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  const formatCOP = (v: number) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(v);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" onClick={() => setMenuOpen(null)}>
       <div className="flex justify-between items-center">
         <div>
           <h1 className="font-heading font-bold text-2xl text-vensato-text-main">Cobros y Recaudo</h1>
@@ -53,19 +85,22 @@ export default function CobrosPage() {
         </Button>
       </div>
 
-      {/* ─── Modal ─── */}
+      {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-vensato-surface rounded-2xl p-8 w-full max-w-md shadow-2xl border border-vensato-border-subtle">
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-heading font-bold text-xl text-vensato-text-main">Nuevo Cobro</h3>
-              <button onClick={() => setShowModal(false)} className="text-vensato-text-secondary hover:text-vensato-text-main"><X className="h-5 w-5" /></button>
+              <button onClick={() => setShowModal(false)}><X className="h-5 w-5 text-vensato-text-secondary" /></button>
             </div>
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-sm font-semibold text-vensato-text-main">Inquilino *</label>
-                <Input value={form.tenant} onChange={e => setForm(f => ({ ...f, tenant: e.target.value }))}
-                  placeholder="Nombre del inquilino" className="bg-vensato-base border-vensato-border-subtle h-10" required />
+                <select value={form.tenantId} onChange={e => setForm(f => ({ ...f, tenantId: e.target.value }))} required
+                  className="w-full h-10 rounded-md border border-vensato-border-subtle bg-vensato-base px-3 text-sm text-vensato-text-main focus:outline-none focus:ring-2 focus:ring-vensato-brand-primary">
+                  <option value="">— Seleccionar inquilino —</option>
+                  {tenants.map(t => <option key={t.id} value={t.id}>{t.fullName} · {t.property}</option>)}
+                </select>
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-semibold text-vensato-text-main">Concepto *</label>
@@ -91,14 +126,13 @@ export default function CobrosPage() {
         </div>
       )}
 
-      {/* ─── Tabs ─── */}
+      {/* Tabs */}
       <div className="flex space-x-1 border-b border-vensato-border-subtle pb-px overflow-x-auto">
         {tabs.map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2 font-medium text-sm whitespace-nowrap transition-colors ${activeTab === tab.key
-              ? "text-vensato-brand-primary border-b-2 border-vensato-brand-primary"
-              : "text-vensato-text-secondary hover:text-vensato-text-main"}`}
-          >{tab.label}</button>
+            className={`px-4 py-2 font-medium text-sm whitespace-nowrap transition-colors ${activeTab === tab.key ? "text-vensato-brand-primary border-b-2 border-vensato-brand-primary" : "text-vensato-text-secondary hover:text-vensato-text-main"}`}>
+            {tab.label}
+          </button>
         ))}
       </div>
 
@@ -106,12 +140,12 @@ export default function CobrosPage() {
         <Table>
           <TableHeader className="bg-vensato-base border-b border-vensato-border-subtle">
             <TableRow className="hover:bg-transparent">
-              <TableHead className="font-medium text-vensato-text-secondary h-12">Concepto / Detalles</TableHead>
+              <TableHead className="font-medium text-vensato-text-secondary h-12">Concepto</TableHead>
               <TableHead className="font-medium text-vensato-text-secondary hidden md:table-cell h-12">Inquilino</TableHead>
               <TableHead className="font-medium text-vensato-text-secondary h-12">Monto</TableHead>
               <TableHead className="font-medium text-vensato-text-secondary hidden lg:table-cell h-12">Vencimiento</TableHead>
               <TableHead className="font-medium text-vensato-text-secondary h-12">Estado</TableHead>
-              <TableHead className="w-[120px] h-12 text-right">Acciones</TableHead>
+              <TableHead className="w-[130px] h-12 text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -127,26 +161,45 @@ export default function CobrosPage() {
                 <TableCell className="font-medium tabular-nums py-4 text-vensato-text-main">{formatCOP(c.amount)}</TableCell>
                 <TableCell className="hidden lg:table-cell py-4 text-vensato-text-secondary tabular-nums">{c.dueDate}</TableCell>
                 <TableCell className="py-4">
-                  {c.status === "paid" && <Badge variant="outline" className="bg-vensato-success/10 text-vensato-success border-vensato-success/20">Pagado</Badge>}
-                  {c.status === "pending" && <Badge variant="outline" className="bg-vensato-border-subtle/50 text-vensato-text-main border-vensato-border-subtle">Pendiente</Badge>}
-                  {c.status === "overdue" && <Badge className="bg-vensato-danger text-white hover:bg-vensato-danger border-transparent">Vencido</Badge>}
+                  <Badge variant="outline" className={`font-medium ${STATUS_STYLES[c.status]}`}>{STATUS_LABELS[c.status]}</Badge>
                 </TableCell>
-                <TableCell className="py-4 text-right space-x-1">
-                  <Button variant="ghost" size="icon"
-                    onClick={() => toast.info("Recordatorio enviado.", { description: `Se notificará a ${c.tenant} sobre el pago pendiente.` })}
-                    className="text-vensato-brand-primary hover:bg-vensato-brand-primary/10 rounded-full h-8 w-8" title="Enviar Recordatorio">
-                    <Send className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon"
-                    onClick={() => toast.info("Descarga de PDF próximamente.", { description: "Generación de PDFs disponible en la siguiente versión." })}
-                    className="text-vensato-text-secondary hover:text-vensato-text-main rounded-full h-8 w-8 hover:bg-vensato-border-subtle/50" title="Descargar PDF">
-                    <ArrowDownToLine className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon"
-                    onClick={() => toast.info("Opciones adicionales próximamente.")}
-                    className="text-vensato-text-secondary hover:text-vensato-text-main rounded-full h-8 w-8 hover:bg-vensato-border-subtle/50">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
+                <TableCell className="py-4 text-right" onClick={e => e.stopPropagation()}>
+                  <div className="flex justify-end items-center space-x-1">
+                    {/* Send reminder */}
+                    <Button variant="ghost" size="icon" title="Enviar recordatorio"
+                      onClick={() => toast.info("Recordatorio enviado.", { description: `Se notificará a ${c.tenant}.` })}
+                      className="text-vensato-brand-primary hover:bg-vensato-brand-primary/10 rounded-full h-8 w-8">
+                      <Send className="h-4 w-4" />
+                    </Button>
+                    {/* PDF Download */}
+                    <Button variant="ghost" size="icon" title="Descargar cuenta de cobro"
+                      disabled={downloading === c.id}
+                      onClick={() => handleDownload(c)}
+                      className="text-vensato-text-secondary hover:text-vensato-text-main rounded-full h-8 w-8 hover:bg-vensato-border-subtle/50">
+                      {downloading === c.id
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <ArrowDownToLine className="h-4 w-4" />
+                      }
+                    </Button>
+                    {/* Status menu */}
+                    <div className="relative">
+                      <Button variant="ghost" size="icon"
+                        onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === c.id ? null : c.id); }}
+                        className="text-vensato-text-secondary hover:text-vensato-text-main rounded-full h-8 w-8 hover:bg-vensato-border-subtle/50">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                      {menuOpen === c.id && (
+                        <div className="absolute right-0 top-8 z-20 bg-vensato-surface rounded-xl shadow-lg border border-vensato-border-subtle py-1 min-w-[150px]">
+                          {(["paid", "pending", "overdue"] as const).map(s => (
+                            <button key={s} onClick={() => { updateChargeStatus(c.id, s); setMenuOpen(null); toast.success(`Cobro marcado como ${STATUS_LABELS[s]}.`); }}
+                              className={`w-full text-left px-4 py-2.5 text-sm hover:bg-vensato-base transition-colors ${c.status === s ? "font-bold text-vensato-brand-primary" : "text-vensato-text-main"}`}>
+                              Marcar como {STATUS_LABELS[s]}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

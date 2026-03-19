@@ -1,4 +1,5 @@
-import { Bell } from "lucide-react";
+import Link from "next/link";
+import { Bell, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function Header({ user }: { user?: any }) {
@@ -14,19 +15,21 @@ export default function Header({ user }: { user?: any }) {
       </div>
 
       <div className="flex items-center space-x-4">
-        <button 
+        <button
            className="relative p-2 text-vensato-text-secondary hover:bg-vensato-base rounded-full transition-colors cursor-pointer"
            title="Centro de notificaciones: Aquí verás alertas de contratos por vencer."
         >
           <Bell size={20} />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-vensato-accent-punch rounded-full border border-vensato-surface" />
         </button>
-        <Button 
-           className="bg-vensato-brand-primary hover:bg-[#5C7D6E] text-white rounded-lg px-4 font-ui shadow-sm"
-           title="Acción rápida: Genera un nuevo comprobante de recaudo para un inquilino al instante."
-        >
-          + Nuevo Cobro
-        </Button>
+        <Link href="/propiedades">
+          <Button
+            className="bg-vensato-brand-primary hover:bg-[#5C7D6E] text-white rounded-lg px-4 font-ui shadow-sm flex items-center"
+            title="Ir a Propiedades y añadir un nuevo inmueble al portafolio."
+          >
+            <Plus className="h-4 w-4 mr-1.5" /> Nueva Propiedad
+          </Button>
+        </Link>
       </div>
     </header>
   );
