@@ -1,77 +1,56 @@
 /**
- * Cloudflare R2 client — SERVER ONLY.
- * Nunca importar desde componentes de cliente.
- * Los secretos R2 (access key, secret) viven únicamente aquí.
+ * Cloudflare R2 — SERVER ONLY.
+ * Usa la API REST de Cloudflare (api.cloudflare.com) para evitar
+ * problemas de conectividad con el endpoint S3-compatible (cloudflarestorage.com).
  */
-import {
-  S3Client,
-  PutObjectCommand,
-  GetObjectCommand,
-  DeleteObjectCommand,
-} from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+const accountId  = process.env.CLOUDFLARE_ACCOUNT_ID;
 const bucketName = process.env.R2_BUCKET_NAME;
-const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+const apiToken   = process.env.CLOUDFLARE_API_TOKEN;
 
-if (!accountId || !bucketName || !accessKeyId || !secretAccessKey) {
+if (!accountId || !bucketName || !apiToken) {
   throw new Error(
-    "Faltan variables de entorno de Cloudflare R2. Verifica CLOUDFLARE_ACCOUNT_ID, R2_BUCKET_NAME, R2_ACCESS_KEY_ID y R2_SECRET_ACCESS_KEY en .env.local"
+    "Faltan variables de R2: CLOUDFLARE_ACCOUNT_ID, R2_BUCKET_NAME, CLOUDFLARE_API_TOKEN"
   );
 }
 
-const r2 = new S3Client({
-  region: "auto",
-  endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-  credentials: {
-    accessKeyId,
-    secretAccessKey,
-  },
-  forcePathStyle: true,
-});
+const base = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucketName}/objects`;
 
-/**
- * Genera una presigned PUT URL para que el browser suba directamente a R2.
- * El archivo NUNCA pasa por el servidor de Next.js.
- */
-export async function getUploadUrl(
+export async function uploadFile(
   key: string,
-  contentType: string,
-  expiresIn = 300
-): Promise<string> {
-  const command = new PutObjectCommand({
-    Bucket: bucketName,
-    Key: key,
-    ContentType: contentType,
+  body: ArrayBuffer,
+  contentType: string
+): Promise<void> {
+  const res = await fetch(`${base}/${key}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      "Content-Type": contentType,
+    },
+    body,
   });
-  return getSignedUrl(r2, command, { expiresIn });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`R2 upload falló (${res.status}): ${text.slice(0, 200)}`);
+  }
 }
 
-/**
- * Genera una presigned GET URL para que el browser descargue desde R2.
- * Por defecto expira en 1 hora.
- */
-export async function getDownloadUrl(
-  key: string,
-  expiresIn = 3600
-): Promise<string> {
-  const command = new GetObjectCommand({
-    Bucket: bucketName,
-    Key: key,
+export async function downloadFile(key: string): Promise<Response> {
+  const res = await fetch(`${base}/${key}`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
   });
-  return getSignedUrl(r2, command, { expiresIn });
+  if (!res.ok) {
+    throw new Error(`R2 download falló (${res.status})`);
+  }
+  return res;
 }
 
-/**
- * Elimina un objeto del bucket R2. Llamar solo desde el servidor
- * después de verificar que el usuario tiene ownership del documento.
- */
 export async function deleteFile(key: string): Promise<void> {
-  const command = new DeleteObjectCommand({
-    Bucket: bucketName,
-    Key: key,
+  const res = await fetch(`${base}/${key}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${apiToken}` },
   });
-  await r2.send(command);
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`R2 delete falló (${res.status})`);
+  }
 }

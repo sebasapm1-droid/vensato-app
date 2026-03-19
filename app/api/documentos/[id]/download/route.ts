@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { deleteFile } from "@/lib/r2";
+import { downloadFile } from "@/lib/r2";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-// DELETE /api/documentos/[id] — elimina archivo en R2 y registro en Supabase
-export async function DELETE(
+export async function GET(
   _req: NextRequest,
   { params }: RouteParams
-): Promise<NextResponse> {
+): Promise<NextResponse | Response> {
   const { id } = await params;
   const supabase = await createClient();
 
@@ -21,7 +20,7 @@ export async function DELETE(
 
   const { data: doc, error } = await supabase
     .from("documentos")
-    .select("id, user_id, r2_key")
+    .select("id, user_id, r2_key, nombre_original")
     .eq("id", id)
     .single();
 
@@ -34,27 +33,18 @@ export async function DELETE(
   }
 
   try {
-    await deleteFile(doc.r2_key);
+    const r2Res = await downloadFile(doc.r2_key);
+    const contentType = r2Res.headers.get("Content-Type") ?? "application/octet-stream";
+
+    return new Response(r2Res.body, {
+      headers: {
+        "Content-Type": contentType,
+        "Content-Disposition": "inline",
+        "Cache-Control": "private, max-age=3600",
+      },
+    });
   } catch (err) {
-    console.error("[documentos DELETE] Error eliminando de R2:", err);
-    return NextResponse.json(
-      { error: "No se pudo eliminar el archivo de almacenamiento" },
-      { status: 500 }
-    );
+    console.error("[download] R2 error:", err);
+    return NextResponse.json({ error: "No se pudo descargar el archivo" }, { status: 500 });
   }
-
-  const { error: dbError } = await supabase
-    .from("documentos")
-    .delete()
-    .eq("id", id);
-
-  if (dbError) {
-    console.error("[documentos DELETE] Error eliminando de Supabase:", dbError);
-    return NextResponse.json(
-      { error: "Archivo eliminado de R2 pero el registro en BD falló" },
-      { status: 500 }
-    );
-  }
-
-  return new NextResponse(null, { status: 204 });
 }

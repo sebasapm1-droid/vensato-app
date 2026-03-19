@@ -17,11 +17,6 @@ export interface Documento {
   created_at: string;
 }
 
-interface UploadUrlResponse {
-  uploadUrl: string;
-  key: string;
-}
-
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 interface UseDocumentosReturn {
@@ -41,10 +36,8 @@ export function useDocumentos(): UseDocumentosReturn {
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Sube un archivo a R2 sin pasar por el servidor:
-   * 1. Obtiene presigned PUT URL del servidor
-   * 2. PUT directo al bucket R2 desde el browser
-   * 3. Guarda la metadata en Supabase vía API
+   * Sube un archivo al servidor, que lo guarda en R2 vía Cloudflare API.
+   * El archivo pasa por Next.js → Cloudflare API → R2.
    */
   const subirDocumento = useCallback(
     async (
@@ -56,67 +49,22 @@ export function useDocumentos(): UseDocumentosReturn {
       setError(null);
 
       try {
-        // Paso 1: Obtener presigned URL del servidor
-        const urlRes = await fetch("/api/documentos/upload-url", {
+        const formData = new FormData();
+        formData.append("file", archivo);
+        formData.append("propiedadId", propiedadId);
+        formData.append("tipo", tipo);
+
+        const res = await fetch("/api/documentos/upload", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            propiedadId,
-            tipo,
-            nombreArchivo: archivo.name,
-            contentType: archivo.type || "application/octet-stream",
-          }),
+          body: formData,
         });
 
-        if (!urlRes.ok) {
-          const { error: apiError } = await urlRes.json() as { error: string };
-          throw new Error(apiError ?? "Error obteniendo URL de carga");
+        if (!res.ok) {
+          const { error: apiError } = await res.json() as { error: string };
+          throw new Error(apiError ?? "Error subiendo documento");
         }
 
-        const { uploadUrl, key } = await urlRes.json() as UploadUrlResponse;
-
-        // Paso 2: PUT directo a R2 — el archivo NUNCA toca el servidor de Next.js
-        let r2Res: Response;
-        try {
-          r2Res = await fetch(uploadUrl, {
-            method: "PUT",
-            headers: { "Content-Type": archivo.type || "application/octet-stream" },
-            body: archivo,
-          });
-        } catch (fetchErr) {
-          // fetch lanza TypeError cuando CORS bloquea la request
-          throw new Error(
-            `No se pudo conectar con R2. Verifica que el dominio esté en el CORS del bucket. (${fetchErr instanceof Error ? fetchErr.message : "TypeError"})`
-          );
-        }
-
-        if (!r2Res.ok) {
-          const body = await r2Res.text().catch(() => "");
-          throw new Error(
-            `R2 rechazó el archivo (HTTP ${r2Res.status}). ${body.slice(0, 200)}`
-          );
-        }
-
-        // Paso 3: Guardar metadata en Supabase
-        const metaRes = await fetch("/api/documentos", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            propiedadId,
-            tipo,
-            nombreOriginal: archivo.name,
-            r2Key: key,
-            tamanioBytes: archivo.size,
-          }),
-        });
-
-        if (!metaRes.ok) {
-          const { error: apiError } = await metaRes.json() as { error: string };
-          throw new Error(apiError ?? "Error guardando metadata del documento");
-        }
-
-        const doc = await metaRes.json() as Documento;
-        return doc;
+        return await res.json() as Documento;
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Error desconocido al subir documento";
         setError(msg);
@@ -129,30 +77,12 @@ export function useDocumentos(): UseDocumentosReturn {
   );
 
   /**
-   * Obtiene una URL temporal de descarga (1 hora) para un documento.
+   * Retorna la URL del endpoint de descarga (autenticado).
+   * El browser abrirá la ruta que hace streaming del archivo desde R2.
    */
   const obtenerUrlDescarga = useCallback(
     async (documentoId: string): Promise<string> => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const res = await fetch(`/api/documentos/${documentoId}`);
-
-        if (!res.ok) {
-          const { error: apiError } = await res.json() as { error: string };
-          throw new Error(apiError ?? "Error obteniendo URL de descarga");
-        }
-
-        const { url } = await res.json() as { url: string };
-        return url;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Error obteniendo URL de descarga";
-        setError(msg);
-        throw err;
-      } finally {
-        setLoading(false);
-      }
+      return `/api/documentos/${documentoId}/download`;
     },
     []
   );
