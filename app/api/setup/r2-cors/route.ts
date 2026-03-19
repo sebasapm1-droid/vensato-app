@@ -22,34 +22,52 @@ export async function GET(): Promise<NextResponse> {
     }, { status: 500 });
   }
 
-  const corsRules = [
-    {
-      allowed_origins: [
-        "http://localhost:3000",
-        "https://app.vensato.com",
-        "https://vensato-app.vercel.app",
-      ],
-      allowed_methods: ["GET", "PUT", "DELETE", "HEAD"],
-      allowed_headers: ["*"],
-      expose_headers: ["ETag", "Content-Length"],
-      max_age_seconds: 3600,
-    },
-  ];
+  const corsRules = {
+    rules: [
+      {
+        allowed: {
+          origins: [
+            "http://localhost:3000",
+            "https://app.vensato.com",
+            "https://vensato-app.vercel.app",
+          ],
+          methods: ["GET", "PUT", "DELETE", "HEAD"],
+          headers: ["*"],
+        },
+        exposeHeaders: ["ETag", "Content-Length"],
+        maxAgeSeconds: 3600,
+      },
+    ],
+  };
 
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucketName}/cors`;
 
   try {
-    // Primero: GET para ver qué formato usa Cloudflare
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${apiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(corsRules),
+    });
+
+    const data = await res.json() as { success: boolean; errors?: unknown[] };
+
+    if (!res.ok || !data.success) {
+      return NextResponse.json({ ok: false, error: "Cloudflare rechazó la petición", details: data }, { status: 500 });
+    }
+
+    // Verificar que quedó guardado
     const getRes = await fetch(url, {
       headers: { "Authorization": `Bearer ${apiToken}` },
     });
-    const getCurrent = await getRes.json();
+    const saved = await getRes.json();
 
     return NextResponse.json({
-      debug: true,
-      status: getRes.status,
-      currentCors: getCurrent,
-      note: "Este es el estado actual del CORS. Revisalo para entender el formato.",
+      ok: true,
+      message: "CORS configurado correctamente. Ya puedes eliminar este endpoint.",
+      corsRules: saved,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Error desconocido";
