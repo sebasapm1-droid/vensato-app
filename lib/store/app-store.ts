@@ -52,7 +52,6 @@ interface AppStore {
   vaultDocuments: VaultDocument[];
   userConfig: UserConfig;
 
-  // Bulk hydration from Supabase on mount
   setAll: (data: Partial<Pick<AppStore, "properties" | "tenants" | "charges" | "contracts" | "vaultDocuments" | "userConfig">>) => void;
 
   // Properties
@@ -61,7 +60,11 @@ interface AppStore {
   deleteProperty: (id: string) => Promise<void>;
 
   // Tenants
-  addTenant: (t: Omit<Tenant, "id">, initialCharge?: Omit<Charge, "id"> | null) => Promise<Tenant>;
+  addTenant: (
+    t: Omit<Tenant, "id">,
+    initialCharge?: Omit<Charge, "id"> | null,
+    contractData?: { startDate: string; contractMonths: number }
+  ) => Promise<Tenant>;
   deleteTenant: (id: string) => Promise<void>;
   addTenantDocument: (tenantId: string, docKey: string) => void;
   removeTenantDocument: (tenantId: string, docKey: string, docId?: string) => Promise<void>;
@@ -69,6 +72,7 @@ interface AppStore {
   // Charges
   addCharge: (c: Omit<Charge, "id">) => Promise<Charge>;
   updateChargeStatus: (id: string, status: ChargeStatus) => Promise<void>;
+  deleteCharge: (id: string) => Promise<void>;
 
   // Contracts
   addContract: (c: Omit<Contract, "id">) => Promise<Contract>;
@@ -76,15 +80,24 @@ interface AppStore {
 
   // Vault
   uploadVaultDocument: (params: { file: File; propertyId: string; tenantId?: string; type: string; name: string }) => Promise<VaultDocument>;
-  addVaultDocument: (d: Omit<VaultDocument, "id">) => void; // Optimistic / manual add
+  addVaultDocument: (d: Omit<VaultDocument, "id">) => void;
   removeVaultDocument: (id: string, fileUrl?: string) => Promise<void>;
 
   // Config
   updateUserConfig: (config: Partial<UserConfig>) => Promise<void>;
 }
 
-function capRate(rent: number, price: number) {
-  return price ? Number(((rent * 12 / price) * 100).toFixed(1)) : 0;
+// Cap rate neto: (canon*12 - admin*12 - predial) / precio_compra
+function capRate(rent: number, price: number, adminFee = 0, predialAnnual = 0) {
+  if (!price) return 0;
+  const noi = rent * 12 - adminFee * 12 - predialAnnual;
+  return Number(((noi / price) * 100).toFixed(1));
+}
+
+function addMonths(dateStr: string, months: number): string {
+  const d = new Date(dateStr + "T12:00:00");
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().split("T")[0];
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -99,7 +112,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     bankName: "", accountType: "Ahorros", accountNumber: "", accountHolder: "",
   },
 
-  // ── Bulk hydration ──
   setAll: (data) => set(s => ({ ...s, ...data })),
 
   // ── Properties ──
@@ -112,7 +124,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     });
     const prop: Property = {
       ...p, id: dbRow.id,
-      capRate: capRate(p.currentRent, p.purchasePrice),
+      capRate: capRate(p.currentRent, p.purchasePrice, p.adminFee, p.predialAnnual),
     };
     set(s => ({ properties: [prop, ...s.properties] }));
     return prop;
@@ -137,7 +149,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (data.status !== undefined) dbData.status = data.status;
     await svc.updateProperty(id, dbData);
     set(s => ({
-      properties: s.properties.map(p => p.id === id ? { ...p, ...data, capRate: capRate(data.currentRent ?? p.currentRent, data.purchasePrice ?? p.purchasePrice) } : p)
+      properties: s.properties.map(p => {
+        if (p.id !== id) return p;
+        const updated = { ...p, ...data };
+        return { ...updated, capRate: capRate(updated.currentRent, updated.purchasePrice, updated.adminFee, updated.predialAnnual) };
+      })
     }));
   },
 
@@ -152,13 +168,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   // ── Tenants ──
-  addTenant: async (t, initialCharge) => {
+  addTenant: async (t, initialCharge, contractData) => {
     const dbRow = await svc.createTenant({
       property_id: t.propertyId || null,
       full_name: t.fullName, cedula: t.cedula, email: t.email, phone: t.phone,
     });
     const tenant: Tenant = { ...t, id: dbRow.id };
     let chargeToAdd: Charge | null = null;
+    let contractToAdd: Contract | null = null;
 
     if (initialCharge) {
       const chargeRow = await svc.createCharge({
@@ -177,20 +194,70 @@ export const useAppStore = create<AppStore>((set, get) => ({
       };
     }
 
+    // Auto-crear contrato si se proveen fechas
+    if (t.propertyId && contractData?.startDate && contractData?.contractMonths) {
+      const property = get().properties.find(p => p.id === t.propertyId);
+      const endDate = addMonths(contractData.startDate, contractData.contractMonths);
+      const contractRow = await svc.createContract({
+        property_id: t.propertyId,
+        tenant_id: dbRow.id,
+        start_date: contractData.startDate,
+        end_date: endDate,
+        duration_months: contractData.contractMonths,
+        initial_rent: property?.currentRent ?? 0,
+        current_rent: property?.currentRent ?? 0,
+        increment_type: "ipc",
+        status: "active",
+      });
+      contractToAdd = {
+        id: contractRow.id, propertyId: t.propertyId, tenantId: dbRow.id,
+        property: property?.alias ?? t.property, tenant: t.fullName, cedula: t.cedula,
+        startDate: contractData.startDate, endDate, vigencyMonths: contractData.contractMonths,
+        rentAmount: property?.currentRent ?? 0, incrementType: "IPC (Ley 820/2003)",
+        status: "active", generatedAt: new Date().toISOString().split("T")[0], savedToVault: false,
+      };
+    }
+
+    // Marcar propiedad como ocupada
+    if (t.propertyId) {
+      await svc.updateProperty(t.propertyId, { status: "occupied" });
+    }
+
     set(s => ({
       tenants: [tenant, ...s.tenants],
       charges: chargeToAdd ? [chargeToAdd, ...s.charges] : s.charges,
+      contracts: contractToAdd ? [contractToAdd, ...s.contracts] : s.contracts,
+      properties: t.propertyId
+        ? s.properties.map(p => p.id === t.propertyId ? { ...p, status: "occupied" as const } : p)
+        : s.properties,
     }));
     return tenant;
   },
 
   deleteTenant: async (id) => {
+    const tenant = get().tenants.find(t => t.id === id);
+    const propertyId = tenant?.propertyId;
+
     await svc.deleteTenant(id);
+
+    // Si no quedan más inquilinos en esa propiedad, marcarla como vacante
+    let shouldVacate = false;
+    if (propertyId) {
+      const remaining = get().tenants.filter(t => t.id !== id && t.propertyId === propertyId);
+      shouldVacate = remaining.length === 0;
+      if (shouldVacate) {
+        await svc.updateProperty(propertyId, { status: "vacant" });
+      }
+    }
+
     set(s => ({
       tenants: s.tenants.filter(t => t.id !== id),
       charges: s.charges.filter(c => c.tenantId !== id),
       contracts: s.contracts.filter(c => c.tenantId !== id),
       vaultDocuments: s.vaultDocuments.filter(d => d.tenantId !== id),
+      properties: shouldVacate && propertyId
+        ? s.properties.map(p => p.id === propertyId ? { ...p, status: "vacant" as const } : p)
+        : s.properties,
     }));
   },
 
@@ -230,6 +297,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set(s => ({ charges: s.charges.map(c => c.id === id ? { ...c, status } : c) }));
   },
 
+  deleteCharge: async (id) => {
+    await svc.deleteCharge(id);
+    set(s => ({ charges: s.charges.filter(c => c.id !== id) }));
+  },
+
   // ── Contracts ──
   addContract: async (c) => {
     const dbRow = await svc.createContract({
@@ -241,7 +313,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       increment_type: "ipc", status: "active",
     });
     const contract: Contract = { ...c, id: dbRow.id };
-    // Also add a vault placeholder entry
     const vaultEntry: VaultDocument = {
       id: `vd_${Date.now()}`, name: `Contrato_${c.tenant.replace(/\s+/g, "_")}.pdf`,
       type: "Contrato", propertyId: c.propertyId, property: c.property,

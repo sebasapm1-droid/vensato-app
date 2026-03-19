@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { UserPlus, MoreHorizontal, Mail, Phone, X, Trash2, Upload, FileText, Check } from "lucide-react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 
 const DOC_TYPES = [
@@ -19,15 +20,14 @@ const DOC_TYPES = [
 ];
 
 export default function InquilinosPage() {
-  const { tenants, addTenant, deleteTenant, addTenantDocument, removeTenantDocument, properties, charges } = useAppStore();
+  const { tenants, addTenant, deleteTenant, addTenantDocument, removeTenantDocument, properties } = useAppStore();
   const [showModal, setShowModal] = useState(false);
-  const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [docsTenant, setDocsTenant] = useState<typeof tenants[0] | null>(null);
-  const [form, setForm] = useState({ fullName: "", cedula: "", email: "", phone: "", propertyId: "", dueDay: "5" });
+  const [form, setForm] = useState({ fullName: "", cedula: "", email: "", phone: "", propertyId: "", dueDay: "5", startDate: "", contractMonths: "12" });
   const [saving, setSaving] = useState(false);
 
   function openCreate() {
-    setForm({ fullName: "", cedula: "", email: "", phone: "", propertyId: "", dueDay: "5" });
+    setForm({ fullName: "", cedula: "", email: "", phone: "", propertyId: "", dueDay: "5", startDate: "", contractMonths: "12" });
     setShowModal(true);
   }
 
@@ -37,29 +37,36 @@ export default function InquilinosPage() {
     setSaving(true);
     try {
       const property = properties.find(p => p.id === form.propertyId);
-      const dueDate = `Día ${form.dueDay} de cada mes`;
+      // Usar startDate si se proveyó, sino el mes actual
+      const startD = form.startDate ? new Date(form.startDate + "T12:00:00") : new Date();
+      const chargeYear = startD.getFullYear();
+      const chargeMonth = startD.getMonth() + 1;
 
-      // Auto-generate first monthly charge if property assigned
+      // Auto-generar primer cobro si hay propiedad asignada
       const initialCharge = property ? {
         tenantId: "", tenant: form.fullName, property: property.alias,
-        concept: `Arriendo - ${new Date().toLocaleDateString("es-CO", { month: "long", year: "numeric" })}`,
+        concept: `Arriendo - ${startD.toLocaleDateString("es-CO", { month: "long", year: "numeric" })}`,
         amount: property.currentRent,
-        dueDate: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(form.dueDay).padStart(2, "0")}`,
+        dueDate: `${chargeYear}-${String(chargeMonth).padStart(2, "0")}-${String(form.dueDay).padStart(2, "0")}`,
         status: "pending" as const,
       } : null;
+
+      const contractData = property && form.startDate
+        ? { startDate: form.startDate, contractMonths: Number(form.contractMonths) }
+        : undefined;
 
       await addTenant({
         fullName: form.fullName, cedula: form.cedula,
         email: form.email, phone: form.phone,
         propertyId: form.propertyId, property: property?.alias ?? "Sin asignar",
         contractStatus: "active", lastPaymentDate: "—", documents: [],
-      }, initialCharge);
+      }, initialCharge, contractData);
 
       toast.success(`Inquilino "${form.fullName}" creado.`, {
         description: initialCharge ? `Cobro de ${property?.alias} generado automáticamente.` : undefined,
       });
       setShowModal(false);
-      setForm({ fullName: "", cedula: "", email: "", phone: "", propertyId: "", dueDay: "5" });
+      setForm({ fullName: "", cedula: "", email: "", phone: "", propertyId: "", dueDay: "5", startDate: "", contractMonths: "12" });
     } catch {
       toast.error("Error al crear el inquilino. Verifica los datos.");
     } finally {
@@ -68,7 +75,6 @@ export default function InquilinosPage() {
   }
 
   async function handleDelete(id: string, name: string) {
-    setMenuOpen(null);
     try {
       await deleteTenant(id);
       toast.success(`Inquilino "${name}" eliminado.`, {
@@ -93,7 +99,7 @@ export default function InquilinosPage() {
   }
 
   return (
-    <div className="space-y-6" onClick={() => setMenuOpen(null)}>
+    <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="font-heading font-bold text-2xl text-vensato-text-main">Inquilinos</h1>
@@ -144,14 +150,30 @@ export default function InquilinosPage() {
                 </select>
               </div>
               {form.propertyId && (
-                <div className="space-y-1.5">
-                  <label className="text-sm font-semibold text-vensato-text-main">Día de cobro (cada mes)</label>
-                  <select value={form.dueDay} onChange={e => setForm(f => ({ ...f, dueDay: e.target.value }))}
-                    className="w-full h-10 rounded-md border border-vensato-border-subtle bg-vensato-base px-3 text-sm focus:outline-none focus:ring-2 focus:ring-vensato-brand-primary">
-                    {[1, 2, 3, 4, 5, 10, 15].map(d => <option key={d} value={d}>Día {d} de cada mes</option>)}
-                  </select>
-                  <p className="text-xs text-vensato-text-secondary mt-1">Se creará automáticamente el primer cobro del mes actual.</p>
-                </div>
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-vensato-text-main">Inicio del contrato</label>
+                      <Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
+                        className="bg-vensato-base border-vensato-border-subtle h-10" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-vensato-text-main">Duración (meses)</label>
+                      <select value={form.contractMonths} onChange={e => setForm(f => ({ ...f, contractMonths: e.target.value }))}
+                        className="w-full h-10 rounded-md border border-vensato-border-subtle bg-vensato-base px-3 text-sm focus:outline-none focus:ring-2 focus:ring-vensato-brand-primary">
+                        {[6, 12, 18, 24, 36].map(m => <option key={m} value={m}>{m} meses</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-vensato-text-main">Día de cobro (cada mes)</label>
+                    <select value={form.dueDay} onChange={e => setForm(f => ({ ...f, dueDay: e.target.value }))}
+                      className="w-full h-10 rounded-md border border-vensato-border-subtle bg-vensato-base px-3 text-sm focus:outline-none focus:ring-2 focus:ring-vensato-brand-primary">
+                      {[1, 2, 3, 4, 5, 10, 15].map(d => <option key={d} value={d}>Día {d} de cada mes</option>)}
+                    </select>
+                    <p className="text-xs text-vensato-text-secondary mt-1">Se creará el primer cobro automáticamente al guardar.</p>
+                  </div>
+                </>
               )}
               <div className="flex space-x-3 pt-2">
                 <Button type="button" variant="outline" onClick={() => setShowModal(false)} className="flex-1 border-vensato-border-subtle">Cancelar</Button>
@@ -247,24 +269,21 @@ export default function InquilinosPage() {
                     <FileText className="h-3.5 w-3.5" /><span>{t.documents.length} doc{t.documents.length !== 1 ? "s" : ""}</span>
                   </button>
                 </TableCell>
-                <TableCell className="py-4 relative">
-                  <Button variant="ghost" size="icon"
-                    onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === t.id ? null : t.id); }}
-                    className="text-vensato-text-secondary hover:text-vensato-text-main rounded-full h-8 w-8 hover:bg-vensato-border-subtle/50">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                  {menuOpen === t.id && (
-                    <div className="absolute right-8 top-3 z-20 bg-vensato-surface rounded-xl shadow-lg border border-vensato-border-subtle py-1 min-w-[170px]" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => { setMenuOpen(null); setDocsTenant(t); }}
-                        className="w-full flex items-center px-4 py-2.5 text-sm text-vensato-text-main hover:bg-vensato-base transition-colors space-x-2">
-                        <Upload className="h-4 w-4 text-vensato-text-secondary" /><span>Gestionar docs</span>
-                      </button>
-                      <button onClick={() => handleDelete(t.id, t.fullName)}
-                        className="w-full flex items-center px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors space-x-2">
-                        <Trash2 className="h-4 w-4" /><span>Eliminar inquilino</span>
-                      </button>
-                    </div>
-                  )}
+                <TableCell className="py-4">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="inline-flex items-center justify-center h-8 w-8 rounded-full text-vensato-text-secondary hover:text-vensato-text-main hover:bg-vensato-border-subtle/50 transition-colors">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="bottom" align="end" className="min-w-[180px]">
+                      <DropdownMenuItem onClick={() => setDocsTenant(t)}>
+                        <Upload className="h-4 w-4" /> Gestionar docs
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" onClick={() => handleDelete(t.id, t.fullName)}>
+                        <Trash2 className="h-4 w-4" /> Eliminar inquilino
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </TableCell>
               </TableRow>
             ))}

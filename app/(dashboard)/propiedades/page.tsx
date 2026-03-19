@@ -11,6 +11,7 @@ import {
 import { useAppStore, type Property } from "@/lib/store/app-store";
 import { formatCOP } from "@/lib/utils/mock-data";
 import { Plus, MoreHorizontal, X, Pencil, Trash2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 
 const propertyTypes = ["Apartamento", "Casa", "Local", "Bodega", "Oficina", "Lote", "Finca"];
@@ -27,7 +28,6 @@ export default function PropiedadesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<Property | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
-  const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   function openCreate() {
@@ -54,12 +54,10 @@ export default function PropiedadesPage() {
       predialAnnual: String(p.predialAnnual),
       notes: p.notes ?? "",
     });
-    setMenuOpen(null);
     setShowModal(true);
   }
 
   async function handleDelete(id: string, alias: string) {
-    setMenuOpen(null);
     try {
       await deleteProperty(id);
       toast.success(`Propiedad "${alias}" eliminada.`);
@@ -95,7 +93,7 @@ export default function PropiedadesPage() {
     setForm(prev => ({ ...prev, [field]: e.target.value }));
 
   return (
-    <div className="space-y-6" onClick={() => setMenuOpen(null)}>
+    <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="font-heading font-bold text-2xl text-vensato-text-main">Propiedades</h1>
@@ -195,7 +193,7 @@ export default function PropiedadesPage() {
                   </div>
                   {form.purchasePrice && form.currentRent && (
                     <p className="text-xs text-vensato-brand-primary font-semibold mt-2">
-                      Cap Rate estimado: {((Number(form.currentRent) * 12 / Number(form.purchasePrice)) * 100).toFixed(2)}%
+                      Cap Rate estimado (neto): {(((Number(form.currentRent) * 12 - Number(form.adminFee) * 12 - Number(form.predialAnnual)) / Number(form.purchasePrice)) * 100).toFixed(2)}%
                     </p>
                   )}
                 </div>
@@ -257,24 +255,21 @@ export default function PropiedadesPage() {
                     : <Badge variant="outline" className="bg-vensato-warning/10 text-vensato-warning border-vensato-warning/20">Vacante</Badge>
                   }
                 </TableCell>
-                <TableCell className="py-4 relative">
-                  <Button variant="ghost" size="icon"
-                    onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === p.id ? null : p.id); }}
-                    className="text-vensato-text-secondary hover:text-vensato-text-main rounded-full h-8 w-8 hover:bg-vensato-border-subtle/50">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                  {menuOpen === p.id && (
-                    <div className="absolute right-8 top-3 z-20 bg-vensato-surface rounded-xl shadow-lg border border-vensato-border-subtle py-1 min-w-[140px]" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => openEdit(p)}
-                        className="w-full flex items-center px-4 py-2.5 text-sm text-vensato-text-main hover:bg-vensato-base transition-colors space-x-2">
-                        <Pencil className="h-4 w-4 text-vensato-text-secondary" /><span>Editar</span>
-                      </button>
-                      <button onClick={() => handleDelete(p.id, p.alias)}
-                        className="w-full flex items-center px-4 py-2.5 text-sm text-vensato-danger hover:bg-red-50 transition-colors space-x-2">
-                        <Trash2 className="h-4 w-4" /><span>Eliminar</span>
-                      </button>
-                    </div>
-                  )}
+                <TableCell className="py-4">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="inline-flex items-center justify-center h-8 w-8 rounded-full text-vensato-text-secondary hover:text-vensato-text-main hover:bg-vensato-border-subtle/50 transition-colors">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="bottom" align="end" className="min-w-[160px]">
+                      <DropdownMenuItem onClick={() => openEdit(p)}>
+                        <Pencil className="h-4 w-4" /> Editar
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" onClick={() => handleDelete(p.id, p.alias)}>
+                        <Trash2 className="h-4 w-4" /> Eliminar
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </TableCell>
               </TableRow>
             ))}

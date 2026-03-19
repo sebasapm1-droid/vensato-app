@@ -18,21 +18,23 @@ const formatCOP = (v: number) => {
 const MONTHS = ["Oct", "Nov", "Dic", "Ene", "Feb", "Mar"];
 
 export default function ReportesPage() {
-  const { properties, tenants, charges } = useAppStore();
+  const { properties, charges } = useAppStore();
 
   // KPIs
   const totalRent = properties.reduce((s, p) => s + p.currentRent, 0);
+  const totalMonthlyExpenses = properties.reduce((s, p) => s + p.adminFee + p.predialAnnual / 12, 0);
+  const netMonthlyIncome = totalRent - totalMonthlyExpenses;
   const occupiedCount = properties.filter(p => p.status === "occupied").length;
   const occupancyRate = properties.length ? Math.round((occupiedCount / properties.length) * 100) : 0;
   const avgCapRate = properties.length ? (properties.reduce((s, p) => s + p.capRate, 0) / properties.length).toFixed(1) : "0";
   const overdueTotal = charges.filter(c => c.status === "overdue").reduce((s, c) => s + c.amount, 0);
-  const paidTotal = charges.filter(c => c.status === "paid").reduce((s, c) => s + c.amount, 0);
 
-  // Monthly income mock
-  const monthlyData = MONTHS.map((m, i) => ({
+  // Gráfica: ingresos y gastos actuales planos por mes (sin incremento artificial)
+  // El incremento real ocurre cada 12 meses según IPC del contrato
+  const monthlyData = MONTHS.map((m) => ({
     mes: m,
-    ingresos: totalRent * (0.85 + i * 0.03),
-    gastos: (properties.reduce((s, p) => s + p.adminFee + p.predialAnnual / 12, 0)) * (0.9 + i * 0.02),
+    ingresos: totalRent,
+    gastos: totalMonthlyExpenses,
   }));
 
   // Cap rate per property
@@ -44,11 +46,13 @@ export default function ReportesPage() {
     { name: "Vacantes", value: properties.length - occupiedCount },
   ];
 
+  const fmt = (v: number) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(v);
   const kpis = [
-    { label: "Ingreso Mensual Bruto", value: new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(totalRent), icon: <TrendingUp className="h-5 w-5 text-vensato-brand-primary" />, sub: "Suma de cánones activos" },
+    { label: "Ingreso Neto Mensual", value: fmt(netMonthlyIncome), icon: <TrendingUp className="h-5 w-5 text-vensato-brand-primary" />, sub: "Cánones − admin − predial/12" },
+    { label: "Ingreso Bruto Mensual", value: fmt(totalRent), icon: <TrendingUp className="h-5 w-5 text-vensato-brand-primary" />, sub: "Suma de cánones activos" },
     { label: "Tasa de Ocupación", value: `${occupancyRate}%`, icon: <Building2 className="h-5 w-5 text-vensato-brand-primary" />, sub: `${occupiedCount} de ${properties.length} propiedades` },
-    { label: "Cap Rate Promedio", value: `${avgCapRate}%`, icon: <TrendingUp className="h-5 w-5 text-vensato-brand-primary" />, sub: "Retorno anual sobre inversión" },
-    { label: "Saldo en Mora", value: new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(overdueTotal), icon: <AlertCircle className="h-5 w-5 text-red-500" />, sub: `${charges.filter(c => c.status === "overdue").length} cobros vencidos` },
+    { label: "Cap Rate Promedio (neto)", value: `${avgCapRate}%`, icon: <TrendingUp className="h-5 w-5 text-vensato-brand-primary" />, sub: "NOI anual / precio de compra" },
+    { label: "Saldo en Mora", value: fmt(overdueTotal), icon: <AlertCircle className="h-5 w-5 text-red-500" />, sub: `${charges.filter(c => c.status === "overdue").length} cobros vencidos` },
   ];
 
   return (
@@ -59,7 +63,7 @@ export default function ReportesPage() {
       </div>
 
       {/* KPI Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {kpis.map(k => (
           <Card key={k.label} className="p-5 border-vensato-border-subtle bg-vensato-surface shadow-sm rounded-xl">
             <div className="flex items-start justify-between mb-3">

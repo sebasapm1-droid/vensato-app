@@ -108,6 +108,12 @@ export async function updateChargeStatus(id: string, status: string) {
   return data;
 }
 
+export async function deleteCharge(id: string) {
+  const sb = createClient();
+  const { error } = await sb.from("charges").delete().eq("id", id);
+  if (error) throw error;
+}
+
 // ─── Contracts ────────────────────────────────────────────────────────────────
 export async function getContracts() {
   const sb = createClient();

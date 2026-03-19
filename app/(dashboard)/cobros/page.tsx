@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAppStore } from "@/lib/store/app-store";
-import { Plus, ArrowDownToLine, Send, MoreHorizontal, X, Loader2 } from "lucide-react";
+import { Plus, ArrowDownToLine, Send, MoreHorizontal, X, Loader2, Trash2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { downloadPDF } from "@/lib/utils/pdf-download";
 import { CuentaDeCobro } from "@/components/pdf/CuentaDeCobro";
@@ -22,10 +23,9 @@ const STATUS_STYLES = {
 };
 
 export default function CobrosPage() {
-  const { charges, addCharge, updateChargeStatus, tenants, userConfig } = useAppStore();
+  const { charges, addCharge, updateChargeStatus, deleteCharge, tenants, userConfig } = useAppStore();
   const [activeTab, setActiveTab] = useState<Tab>("pending");
   const [showModal, setShowModal] = useState(false);
-  const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [form, setForm] = useState({ tenantId: "", concept: "", amount: "", dueDate: "" });
 
@@ -73,8 +73,17 @@ export default function CobrosPage() {
 
   const formatCOP = (v: number) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(v);
 
+  async function handleDelete(id: string) {
+    try {
+      await deleteCharge(id);
+      toast.success("Cobro eliminado.");
+    } catch {
+      toast.error("No se pudo eliminar el cobro.");
+    }
+  }
+
   return (
-    <div className="space-y-6" onClick={() => setMenuOpen(null)}>
+    <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="font-heading font-bold text-2xl text-vensato-text-main">Cobros y Recaudo</h1>
@@ -182,23 +191,24 @@ export default function CobrosPage() {
                       }
                     </Button>
                     {/* Status menu */}
-                    <div className="relative">
-                      <Button variant="ghost" size="icon"
-                        onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === c.id ? null : c.id); }}
-                        className="text-vensato-text-secondary hover:text-vensato-text-main rounded-full h-8 w-8 hover:bg-vensato-border-subtle/50">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="inline-flex items-center justify-center h-8 w-8 rounded-full text-vensato-text-secondary hover:text-vensato-text-main hover:bg-vensato-border-subtle/50 transition-colors">
                         <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                      {menuOpen === c.id && (
-                        <div className="absolute right-0 top-8 z-20 bg-vensato-surface rounded-xl shadow-lg border border-vensato-border-subtle py-1 min-w-[150px]">
-                          {(["paid", "pending", "overdue"] as const).map(s => (
-                            <button key={s} onClick={() => { updateChargeStatus(c.id, s); setMenuOpen(null); toast.success(`Cobro marcado como ${STATUS_LABELS[s]}.`); }}
-                              className={`w-full text-left px-4 py-2.5 text-sm hover:bg-vensato-base transition-colors ${c.status === s ? "font-bold text-vensato-brand-primary" : "text-vensato-text-main"}`}>
-                              Marcar como {STATUS_LABELS[s]}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent side="bottom" align="end" className="min-w-[200px]">
+                        {(["paid", "pending", "overdue"] as const).map(s => (
+                          <DropdownMenuItem key={s}
+                            onClick={() => { updateChargeStatus(c.id, s); toast.success(`Cobro marcado como ${STATUS_LABELS[s]}.`); }}
+                            className={c.status === s ? "font-bold text-vensato-brand-primary" : ""}>
+                            Marcar como {STATUS_LABELS[s]}
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem variant="destructive" onClick={() => handleDelete(c.id)}>
+                          <Trash2 className="h-4 w-4" /> Eliminar cobro
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </TableCell>
               </TableRow>

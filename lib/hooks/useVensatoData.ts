@@ -23,7 +23,7 @@ function dbPropertyToStore(p: any) {
     predialAnnual: p.predial_annual ?? 0, notes: p.notes ?? "",
     status: p.status ?? "vacant", tenant: null,
     capRate: p.commercial_value && p.current_rent
-      ? Number(((p.current_rent * 12 / p.commercial_value) * 100).toFixed(1)) : 0,
+      ? Number((((p.current_rent * 12 - (p.admin_fee ?? 0) * 12 - (p.predial_annual ?? 0)) / p.commercial_value) * 100).toFixed(1)) : 0,
   };
 }
 
