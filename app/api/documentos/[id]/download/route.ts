@@ -40,7 +40,7 @@ export async function GET(
       headers: {
         "Content-Type": contentType,
         "Content-Disposition": "inline",
-        "Cache-Control": "private, max-age=3600",
+        "Cache-Control": "no-store",
       },
     });
   } catch (err) {
