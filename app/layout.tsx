@@ -1,25 +1,14 @@
 import type { Metadata } from "next";
-import { Playfair_Display, Plus_Jakarta_Sans, Geist } from "next/font/google";
+import { Playfair_Display, Plus_Jakarta_Sans } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
-import { cn } from "@/lib/utils";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
-
-const playfair = Playfair_Display({
-  subsets: ["latin"],
-  variable: "--font-heading",
-  weight: ["700"],
-});
-
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  variable: "--font-ui",
-  weight: ["400", "500", "600"],
-});
+const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-heading" });
+const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-ui" });
 
 export const metadata: Metadata = {
   title: "Vensato App",
-  description: "Property Management System premium para inversionistas",
+  description: "PMS para Inversionistas Inmobiliarios Independientes",
 };
 
 export default function RootLayout({
@@ -28,11 +17,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={cn("font-sans", geist.variable)}>
-      <body
-        className={`${playfair.variable} ${jakarta.variable} font-ui antialiased bg-vensato-base text-vensato-text-main`}
-      >
+    <html lang="es">
+      <body className={`${playfair.variable} ${jakarta.variable} antialiased`}>
         {children}
+        <Toaster position="top-center" richColors />
       </body>
     </html>
   );
