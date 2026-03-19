@@ -7,9 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { UserPlus, MoreHorizontal, Mail, Phone, X, Trash2, Upload, FileText, Check } from "lucide-react";
+import { UserPlus, MoreHorizontal, Mail, Phone, X, Trash2, Upload, FileText, Loader2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { useDocumentos, type Documento } from "@/hooks/useDocumentos";
 
 const DOC_TYPES = [
   { key: "cedula", label: "Cédula de Ciudadanía" },
@@ -20,11 +21,59 @@ const DOC_TYPES = [
 ];
 
 export default function InquilinosPage() {
-  const { tenants, addTenant, deleteTenant, addTenantDocument, removeTenantDocument, properties } = useAppStore();
+  const { tenants, addTenant, deleteTenant, properties } = useAppStore();
+  const { subirDocumento, eliminarDocumento, loading: docLoading } = useDocumentos();
   const [showModal, setShowModal] = useState(false);
   const [docsTenant, setDocsTenant] = useState<typeof tenants[0] | null>(null);
   const [form, setForm] = useState({ fullName: "", cedula: "", email: "", phone: "", propertyId: "", dueDay: "5", startDate: "", contractMonths: "12" });
   const [saving, setSaving] = useState(false);
+
+  // Documentos R2 por inquilino
+  const [allDocs, setAllDocs] = useState<Documento[]>([]);
+  const [docType, setDocType] = useState("");
+  const [docFile, setDocFile] = useState<File | null>(null);
+
+  // Cargar todos los documentos una vez
+  useState(() => {
+    fetch("/api/documentos")
+      .then(r => r.json())
+      .then((data: Documento[]) => setAllDocs(data))
+      .catch(() => {});
+  });
+
+  function getTenantDocs(tenantId: string) {
+    return allDocs.filter(d => d.r2_key.includes(`/tenant_${tenantId}/`));
+  }
+
+  async function handleOpenDocsModal(tenant: typeof tenants[0]) {
+    setDocsTenant(tenant);
+    setDocType("");
+    setDocFile(null);
+  }
+
+  async function handleUploadDoc(e: React.FormEvent) {
+    e.preventDefault();
+    if (!docsTenant || !docType || !docFile) return;
+    try {
+      const doc = await subirDocumento(docFile, `tenant_${docsTenant.id}`, docType as never);
+      setAllDocs(prev => [doc, ...prev]);
+      toast.success("Documento cargado.");
+      setDocType("");
+      setDocFile(null);
+    } catch (err) {
+      toast.error("Error al cargar.", { description: err instanceof Error ? err.message : undefined });
+    }
+  }
+
+  async function handleDeleteDoc(doc: Documento) {
+    try {
+      await eliminarDocumento(doc.id);
+      setAllDocs(prev => prev.filter(d => d.id !== doc.id));
+      toast.success("Documento eliminado.");
+    } catch {
+      toast.error("No se pudo eliminar el documento.");
+    }
+  }
 
   function openCreate() {
     setForm({ fullName: "", cedula: "", email: "", phone: "", propertyId: "", dueDay: "5", startDate: "", contractMonths: "12" });
@@ -83,19 +132,6 @@ export default function InquilinosPage() {
     } catch {
       toast.error("Error al eliminar el inquilino.");
     }
-  }
-
-  function handleAddDoc(tenantId: string, docKey: string, fileName = "") {
-    addTenantDocument(tenantId, docKey);
-    const docLabel = DOC_TYPES.find(d => d.key === docKey)?.label ?? docKey;
-    // Also add to vault
-    const tenant = tenants.find(t => t.id === tenantId);
-    toast.success(`"${docLabel}" cargado.`);
-  }
-
-  function handleRemoveDoc(tenantId: string, docKey: string) {
-    removeTenantDocument(tenantId, docKey);
-    toast.success("Documento eliminado.");
   }
 
   return (
@@ -187,46 +223,59 @@ export default function InquilinosPage() {
       {/* Documents Modal */}
       {docsTenant && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-vensato-surface rounded-2xl p-8 w-full max-w-md shadow-2xl border border-vensato-border-subtle">
+          <div className="bg-vensato-surface rounded-2xl p-8 w-full max-w-md shadow-2xl border border-vensato-border-subtle max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <div>
-                <h3 className="font-heading font-bold text-xl text-vensato-text-main">Gestionar Documentos</h3>
+                <h3 className="font-heading font-bold text-xl text-vensato-text-main">Documentos</h3>
                 <p className="text-sm text-vensato-text-secondary">{docsTenant.fullName}</p>
               </div>
               <button onClick={() => setDocsTenant(null)}><X className="h-5 w-5 text-vensato-text-secondary" /></button>
             </div>
-            <div className="space-y-2">
-              {DOC_TYPES.map(doc => {
-                const current = tenants.find(t => t.id === docsTenant.id);
-                const uploaded = current?.documents.includes(doc.key);
-                return (
-                  <div key={doc.key} className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${uploaded ? "border-vensato-success/30 bg-vensato-success/5" : "border-vensato-border-subtle bg-vensato-base"}`}>
-                    <span className="flex items-center space-x-2 text-sm text-vensato-text-main">
-                      <FileText className={`h-4 w-4 ${uploaded ? "text-vensato-success" : "text-vensato-text-secondary"}`} />
-                      <span>{doc.label}</span>
-                    </span>
-                    <div className="flex items-center space-x-1">
-                      {uploaded ? (
-                        <>
-                          <span className="text-xs font-semibold text-vensato-success mr-2 flex items-center"><Check className="h-3 w-3 mr-0.5" /> Cargado</span>
-                          <button onClick={() => handleRemoveDoc(docsTenant.id, doc.key)}
-                            className="text-red-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors" title="Eliminar documento">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </>
-                      ) : (
-                        <label className="cursor-pointer flex items-center space-x-1 text-xs text-vensato-brand-primary font-semibold hover:underline">
-                          <Upload className="h-3.5 w-3.5" /><span>Subir</span>
-                          <input type="file" accept=".pdf,.jpg,.png" className="hidden"
-                            onChange={() => handleAddDoc(docsTenant.id, doc.key)} />
-                        </label>
-                      )}
+
+            {/* Lista de documentos */}
+            <div className="space-y-2 mb-6">
+              {getTenantDocs(docsTenant.id).length === 0
+                ? <p className="text-sm text-vensato-text-secondary italic">Sin documentos cargados.</p>
+                : getTenantDocs(docsTenant.id).map(doc => (
+                    <div key={doc.id} className="flex items-center gap-2 p-2.5 rounded-lg border border-vensato-border-subtle bg-vensato-base group">
+                      <FileText className="h-4 w-4 text-vensato-text-secondary shrink-0" />
+                      <span className="text-sm text-vensato-text-main flex-1 truncate">{doc.nombre_original}</span>
+                      <span className="text-xs text-vensato-text-secondary">{doc.tipo}</span>
+                      <button
+                        onClick={() => handleDeleteDoc(doc)}
+                        disabled={docLoading}
+                        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                  </div>
-                );
-              })}
+                  ))
+              }
             </div>
-            <Button onClick={() => setDocsTenant(null)} className="w-full mt-6 bg-vensato-brand-primary hover:bg-[#5C7D6E] text-white">Cerrar</Button>
+
+            {/* Subir nuevo documento */}
+            <form onSubmit={handleUploadDoc} className="space-y-3 border-t border-vensato-border-subtle pt-4">
+              <p className="text-xs font-semibold text-vensato-text-secondary uppercase tracking-wider">Subir nuevo documento</p>
+              <select
+                value={docType}
+                onChange={e => setDocType(e.target.value)}
+                required
+                className="w-full h-10 rounded-md border border-vensato-border-subtle bg-vensato-base px-3 text-sm focus:outline-none focus:ring-2 focus:ring-vensato-brand-primary"
+              >
+                <option value="">— Tipo de documento —</option>
+                {DOC_TYPES.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
+              </select>
+              <label className="flex items-center gap-2 p-3 border border-dashed border-vensato-border-subtle rounded-lg cursor-pointer hover:border-vensato-brand-primary/50 transition-colors bg-vensato-base">
+                <Upload className="h-4 w-4 text-vensato-brand-primary shrink-0" />
+                <span className="text-sm text-vensato-text-secondary truncate">
+                  {docFile ? docFile.name : "Seleccionar archivo (PDF)"}
+                </span>
+                <input type="file" accept=".pdf,.jpg,.png" className="hidden" onChange={e => setDocFile(e.target.files?.[0] ?? null)} />
+              </label>
+              <Button type="submit" disabled={docLoading || !docFile || !docType} className="w-full bg-vensato-brand-primary hover:bg-[#5C7D6E] text-white">
+                {docLoading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Subiendo…</> : "Subir Documento"}
+              </Button>
+            </form>
           </div>
         </div>
       )}
@@ -264,9 +313,10 @@ export default function InquilinosPage() {
                   }
                 </TableCell>
                 <TableCell className="hidden lg:table-cell py-4">
-                  <button onClick={() => setDocsTenant(t)}
+                  <button onClick={() => handleOpenDocsModal(t)}
                     className="flex items-center space-x-1 text-xs font-semibold text-vensato-brand-primary hover:underline">
-                    <FileText className="h-3.5 w-3.5" /><span>{t.documents.length} doc{t.documents.length !== 1 ? "s" : ""}</span>
+                    <FileText className="h-3.5 w-3.5" />
+                    <span>{getTenantDocs(t.id).length} doc{getTenantDocs(t.id).length !== 1 ? "s" : ""}</span>
                   </button>
                 </TableCell>
                 <TableCell className="py-4">
@@ -275,7 +325,7 @@ export default function InquilinosPage() {
                       <MoreHorizontal className="h-4 w-4" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent side="bottom" align="end" className="min-w-[180px]">
-                      <DropdownMenuItem onClick={() => setDocsTenant(t)}>
+                      <DropdownMenuItem onClick={() => handleOpenDocsModal(t)}>
                         <Upload className="h-4 w-4" /> Gestionar docs
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
