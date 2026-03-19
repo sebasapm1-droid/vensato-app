@@ -236,6 +236,11 @@ export default function PropiedadesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
+            {props.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-12 text-vensato-text-secondary">No hay propiedades registradas.</TableCell>
+              </TableRow>
+            )}
             {props.map((p) => (
               <TableRow key={p.id} className="hover:bg-vensato-base/50 transition-colors border-vensato-border-subtle">
                 <TableCell className="py-4">
