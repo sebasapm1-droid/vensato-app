@@ -73,7 +73,7 @@ export default function ConfiguracionPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex space-x-1 border-b border-vensato-border-subtle pb-px overflow-x-auto">
+      <div className="flex space-x-1 border-b border-vensato-border-subtle pb-px overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {tabs.map(t => (
           <button key={t.key} onClick={() => setActive(t.key)}
             className={`flex items-center space-x-2 px-4 py-2 font-medium text-sm whitespace-nowrap transition-colors ${active === t.key ? "text-vensato-brand-primary border-b-2 border-vensato-brand-primary" : "text-vensato-text-secondary hover:text-vensato-text-main"}`}>
