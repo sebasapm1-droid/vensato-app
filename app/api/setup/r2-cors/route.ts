@@ -2,21 +2,11 @@
  * Endpoint temporal para configurar el CORS de R2 desde el servidor.
  * Llamar UNA SOLA VEZ desde el browser cuando esté desplegado en Vercel.
  * ELIMINAR este archivo después de usarlo.
- *
- * Protegido: solo funciona si el usuario está autenticado.
  */
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { NextResponse } from "next/server";
 import { S3Client, PutBucketCorsCommand, GetBucketCorsCommand } from "@aws-sdk/client-s3";
 
-export async function GET(_req: NextRequest): Promise<NextResponse> {
-  // Solo usuarios autenticados pueden ejecutar esto
-  const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-
+export async function GET(): Promise<NextResponse> {
   const accountId       = process.env.CLOUDFLARE_ACCOUNT_ID!;
   const bucketName      = process.env.R2_BUCKET_NAME!;
   const accessKeyId     = process.env.R2_ACCESS_KEY_ID!;
