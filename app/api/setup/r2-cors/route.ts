@@ -1,76 +1,83 @@
 /**
- * Endpoint temporal para configurar el CORS de R2 via Cloudflare REST API.
- * Llamar UNA SOLA VEZ desde el browser cuando esté desplegado en Vercel.
- * ELIMINAR este archivo después de usarlo.
+ * Endpoint de diagnóstico + configuración CORS temporal.
+ * ELIMINAR después de resolver el problema de uploads.
  */
 import { NextResponse } from "next/server";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export async function GET(): Promise<NextResponse> {
   const accountId  = process.env.CLOUDFLARE_ACCOUNT_ID;
   const bucketName = process.env.R2_BUCKET_NAME;
+  const accessKeyId    = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
   const apiToken   = process.env.CLOUDFLARE_API_TOKEN;
 
-  if (!accountId || !bucketName || !apiToken) {
-    return NextResponse.json({
-      ok: false,
-      error: "Faltan variables de entorno",
-      debug: {
-        CLOUDFLARE_ACCOUNT_ID: accountId  ? "✅ presente" : "❌ falta",
-        R2_BUCKET_NAME:        bucketName ? "✅ presente" : "❌ falta",
-        CLOUDFLARE_API_TOKEN:  apiToken   ? "✅ presente" : "❌ falta",
-      },
-    }, { status: 500 });
-  }
-
-  const corsRules = {
-    rules: [
-      {
-        allowed: {
-          origins: [
-            "http://localhost:3000",
-            "https://app.vensato.com",
-            "https://vensato-app.vercel.app",
-          ],
-          methods: ["GET", "PUT", "DELETE", "HEAD"],
-          headers: ["*"],
-        },
-        exposeHeaders: ["ETag", "Content-Length"],
-        maxAgeSeconds: 3600,
-      },
-    ],
+  const envCheck = {
+    CLOUDFLARE_ACCOUNT_ID: accountId  ? "✅" : "❌",
+    R2_BUCKET_NAME:        bucketName ? "✅" : "❌",
+    R2_ACCESS_KEY_ID:      accessKeyId    ? "✅" : "❌",
+    R2_SECRET_ACCESS_KEY:  secretAccessKey ? "✅" : "❌",
+    CLOUDFLARE_API_TOKEN:  apiToken   ? "✅" : "❌",
   };
 
-  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucketName}/cors`;
-
-  try {
-    const res = await fetch(url, {
-      method: "PUT",
-      headers: {
-        "Authorization": `Bearer ${apiToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(corsRules),
-    });
-
-    const data = await res.json() as { success: boolean; errors?: unknown[] };
-
-    if (!res.ok || !data.success) {
-      return NextResponse.json({ ok: false, error: "Cloudflare rechazó la petición", details: data }, { status: 500 });
-    }
-
-    // Verificar que quedó guardado
-    const getRes = await fetch(url, {
-      headers: { "Authorization": `Bearer ${apiToken}` },
-    });
-    const saved = await getRes.json();
-
-    return NextResponse.json({
-      ok: true,
-      message: "CORS configurado correctamente. Ya puedes eliminar este endpoint.",
-      corsRules: saved,
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Error desconocido";
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+  if (!accountId || !bucketName || !accessKeyId || !secretAccessKey) {
+    return NextResponse.json({ ok: false, envCheck }, { status: 500 });
   }
+
+  // 1. Test fetch() connectivity to R2 S3 endpoint
+  let fetchConnectivity: string;
+  try {
+    const r = await fetch(`https://${accountId}.r2.cloudflarestorage.com`, {
+      method: "HEAD",
+      signal: AbortSignal.timeout(5000),
+    });
+    fetchConnectivity = `✅ HTTP ${r.status}`;
+  } catch (e) {
+    fetchConnectivity = `❌ ${e instanceof Error ? e.message : String(e)}`;
+  }
+
+  // 2. Generate a presigned URL to inspect its format
+  const r2 = new S3Client({
+    region: "auto",
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
+    forcePathStyle: true,
+  });
+
+  let presignedUrl: string;
+  try {
+    presignedUrl = await getSignedUrl(
+      r2,
+      new PutObjectCommand({ Bucket: bucketName, Key: "test/diagnostic.txt", ContentType: "text/plain" }),
+      { expiresIn: 60 }
+    );
+  } catch (e) {
+    presignedUrl = `❌ Error generando URL: ${e instanceof Error ? e.message : String(e)}`;
+  }
+
+  // 3. Test fetch() PUT to the presigned URL (small payload)
+  let presignedPutTest: string;
+  if (presignedUrl.startsWith("http")) {
+    try {
+      const r = await fetch(presignedUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "text/plain" },
+        body: "test",
+        signal: AbortSignal.timeout(8000),
+      });
+      presignedPutTest = `✅ HTTP ${r.status} - ${await r.text().catch(() => "")}`;
+    } catch (e) {
+      presignedPutTest = `❌ ${e instanceof Error ? e.message : String(e)}`;
+    }
+  } else {
+    presignedPutTest = "⏭️ Saltado (URL inválida)";
+  }
+
+  return NextResponse.json({
+    envCheck,
+    fetchConnectivity,
+    presignedUrl,
+    presignedPutTest,
+  });
 }
