@@ -28,7 +28,7 @@ const today = () => new Date().toLocaleDateString("es-CO", { year: "numeric", mo
 interface Props {
   charge: { tenant: string; property: string; concept: string; amount: number; dueDate: string; status: string; };
   tenant?: { cedula?: string; email?: string; phone?: string; };
-  owner: { fullName: string; nit: string; bankName: string; accountType: string; accountNumber: string; accountHolder: string; };
+  owner: { fullName: string; nit: string; bankName: string; accountType: string; accountNumber: string; bankAccountKey?: string; accountHolder: string; };
 }
 
 export function CuentaDeCobro({ charge, tenant, owner }: Props) {
@@ -78,6 +78,7 @@ export function CuentaDeCobro({ charge, tenant, owner }: Props) {
           <View style={styles.row}><Text style={styles.label}>Banco:</Text><Text style={styles.value}>{owner.bankName || "—"}</Text></View>
           <View style={styles.row}><Text style={styles.label}>Tipo de cuenta:</Text><Text style={styles.value}>{owner.accountType || "—"}</Text></View>
           <View style={styles.row}><Text style={styles.label}>Número de cuenta:</Text><Text style={styles.value}>{owner.accountNumber || "—"}</Text></View>
+          {owner.bankAccountKey && <View style={styles.row}><Text style={styles.label}>Llave (Celular):</Text><Text style={styles.value}>{owner.bankAccountKey}</Text></View>}
           <View style={styles.row}><Text style={styles.label}>Titular:</Text><Text style={styles.value}>{owner.accountHolder || owner.fullName || "—"}</Text></View>
         </View>
 

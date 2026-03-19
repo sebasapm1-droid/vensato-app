@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { User, Building2, Bell, Link, Save } from "lucide-react";
 import { toast } from "sonner";
 
-const BANKS = ["Bancolombia", "Davivienda", "BBVA", "Banco de Bogotá", "Banco Popular", "Itaú", "Colpatria", "Lulo Bank", "Nequi", "Daviplata", "Otro"];
+const BANKS = ["Bancolombia", "Davivienda", "BBVA", "Banco de Bogotá", "Banco Popular", "Itaú", "Colpatria", "Lulo Bank", "Nu Bank", "Nequi", "Daviplata", "Ualá", "Otro"];
 const ACCOUNT_TYPES = ["Ahorros", "Corriente"];
 
 export default function ConfiguracionPage() {
@@ -105,7 +105,12 @@ export default function ConfiguracionPage() {
                   <Input value={form.accountNumber} onChange={e => setForm(f => ({ ...f, accountNumber: e.target.value }))}
                     placeholder="1234567890" className="bg-vensato-surface border-vensato-border-subtle h-10" />
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 flex flex-col justify-end">
+                  <label className="text-sm font-semibold text-vensato-text-main">Llave (Opcional)</label>
+                  <Input value={form.bankAccountKey || ""} onChange={e => setForm(f => ({ ...f, bankAccountKey: e.target.value }))}
+                    placeholder="Ej. Número de celular" className="bg-vensato-surface border-vensato-border-subtle h-10" />
+                </div>
+                <div className="col-span-2 space-y-1.5">
                   <label className="text-sm font-semibold text-vensato-text-main">Titular de la cuenta</label>
                   <Input value={form.accountHolder} onChange={e => setForm(f => ({ ...f, accountHolder: e.target.value }))}
                     placeholder="Mismo que el perfil si es igual" className="bg-vensato-surface border-vensato-border-subtle h-10" />
@@ -131,6 +136,7 @@ export default function ConfiguracionPage() {
                   { l: "Banco", v: userConfig.bankName },
                   { l: "Tipo de cuenta", v: userConfig.accountType },
                   { l: "Número", v: userConfig.accountNumber || "—" },
+                  { l: "Llave", v: userConfig.bankAccountKey || "—" },
                   { l: "Titular", v: userConfig.accountHolder || userConfig.fullName || "—" },
                 ].map(r => (
                   <div key={r.l} className="flex items-center justify-between text-sm">

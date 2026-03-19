@@ -84,6 +84,7 @@ function dbProfileToStore(p: any) {
     bankName: p.bank_name ?? "", accountType: p.bank_account_type ?? "Ahorros",
     accountNumber: p.bank_account_number ?? "",
     accountHolder: p.bank_account_holder ?? "",
+    bankAccountKey: p.bank_account_key ?? "",
   };
 }
 

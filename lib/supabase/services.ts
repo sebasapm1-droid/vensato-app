@@ -15,7 +15,8 @@ export async function getProfile() {
 
 export async function upsertProfile(profile: {
   full_name?: string; email?: string; phone?: string; cedula?: string;
-  bank_name?: string; bank_account_type?: string; bank_account_number?: string; bank_account_holder?: string;
+  bank_name?: string; bank_account_type?: string; bank_account_number?: string;
+  bank_account_holder?: string; bank_account_key?: string;
 }) {
   const sb = createClient();
   const { data: { user } } = await sb.auth.getUser();

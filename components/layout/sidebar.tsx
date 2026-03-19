@@ -88,12 +88,12 @@ function SidebarLink({
       href={href}
       className={`flex items-center justify-between px-3 py-2.5 rounded-lg transition-colors group ${
         isActive
-          ? "bg-vensato-brand-primary/10 text-vensato-brand-primary"
+          ? "bg-vensato-accent-punch/10 text-vensato-accent-punch"
           : "text-vensato-text-secondary hover:bg-vensato-base hover:text-vensato-text-main"
       }`}
     >
       <div className="flex items-center space-x-3">
-        <span className={`transition-colors ${isActive ? "text-vensato-brand-primary" : "text-vensato-text-secondary group-hover:text-vensato-brand-primary"}`}>
+        <span className={`transition-colors ${isActive ? "text-vensato-accent-punch" : "text-vensato-text-secondary group-hover:text-vensato-accent-punch"}`}>
           {icon}
         </span>
         <span className="font-ui font-medium text-sm">{label}</span>

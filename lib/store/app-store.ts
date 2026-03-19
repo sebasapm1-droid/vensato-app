@@ -39,7 +39,8 @@ export interface VaultDocument {
 
 export interface UserConfig {
   fullName: string; email: string; phone: string; nit: string;
-  bankName: string; accountType: string; accountNumber: string; accountHolder: string;
+  bankName: string; accountType: string; accountNumber: string;
+  accountHolder: string; bankAccountKey?: string;
 }
 
 // ─── Store Interface ───────────────────────────────────────────────────────────
@@ -289,13 +290,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   // ── Config ──
-  updateUserConfig: async (config) => {
+  updateUserConfig: async (profile) => {
     await svc.upsertProfile({
-      full_name: config.fullName, email: config.email,
-      phone: config.phone, cedula: config.nit,
-      bank_name: config.bankName, bank_account_type: config.accountType,
-      bank_account_number: config.accountNumber, bank_account_holder: config.accountHolder,
+      full_name: profile.fullName, email: profile.email, phone: profile.phone, cedula: profile.nit,
+      bank_name: profile.bankName, bank_account_type: profile.accountType,
+      bank_account_number: profile.accountNumber, bank_account_holder: profile.accountHolder,
+      bank_account_key: profile.bankAccountKey,
     });
-    set(s => ({ userConfig: { ...s.userConfig, ...config } }));
+    set(s => ({ userConfig: { ...s.userConfig, ...profile } }));
   },
 }));
