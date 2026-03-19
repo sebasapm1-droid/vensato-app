@@ -41,11 +41,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "No se pudo subir el archivo" }, { status: 500 });
   }
 
+  // propiedadId puede ser "tenant_{id}" para docs de inquilino — en ese caso no hay FK válida
+  const dbPropId = propiedadId.startsWith("tenant_") ? null : propiedadId;
+
   const { data, error } = await supabase
     .from("documentos")
     .insert({
       user_id: user.id,
-      propiedad_id: propiedadId,
+      propiedad_id: dbPropId,
       tipo,
       nombre_original: file.name,
       r2_key: key,
