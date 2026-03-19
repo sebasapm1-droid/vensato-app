@@ -45,7 +45,7 @@ export async function GET(): Promise<NextResponse> {
         "Authorization": `Bearer ${apiToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(corsRules),
+      body: JSON.stringify({ rules: corsRules }),
     });
 
     const data = await res.json() as { success: boolean; errors?: unknown[] };
