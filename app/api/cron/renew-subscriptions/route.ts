@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
 
   const { data: profiles, error } = await supabaseAdmin
     .from("profiles")
-    .select("id, tier, subscription_valid_until, wompi_payment_token, email")
+    .select("id, tier, pending_tier, subscription_valid_until, wompi_payment_token, email")
     .eq("subscription_status", "active")
     .neq("tier", "base")
     .not("wompi_payment_token", "is", null)
@@ -63,10 +63,23 @@ export async function GET(req: NextRequest) {
   let failed = 0;
 
   for (const profile of profiles) {
-    const amountCOP = PLANS_COP[profile.tier];
+    // Apply pending downgrade to base: no charge, just switch tier
+    if (profile.pending_tier === "base") {
+      await supabaseAdmin
+        .from("profiles")
+        .update({ tier: "base", subscription_status: "cancelled", pending_tier: null, pending_tier_since: null, wompi_payment_token: null })
+        .eq("id", profile.id);
+      console.log(`[renew] downgraded ${profile.id} to base`);
+      renewed++;
+      continue;
+    }
+
+    // Use pending_tier if scheduled, otherwise renew current tier
+    const billingTier = (profile.pending_tier ?? profile.tier) as string;
+    const amountCOP = PLANS_COP[billingTier];
     if (!amountCOP) continue;
 
-    const reference = `vensato-renewal-${profile.tier}-${profile.id}-${Date.now()}`;
+    const reference = `vensato-renewal-${billingTier}-${profile.id}-${Date.now()}`;
 
     try {
       const txRes = await fetch(`${WOMPI_BASE}/transactions`, {
@@ -96,12 +109,18 @@ export async function GET(req: NextRequest) {
         const newValidUntil = addDays(new Date(profile.subscription_valid_until), 31);
         await supabaseAdmin
           .from("profiles")
-          .update({ subscription_valid_until: newValidUntil, subscription_status: "active" })
+          .update({
+            tier: billingTier,
+            subscription_valid_until: newValidUntil,
+            subscription_status: "active",
+            pending_tier: null,
+            pending_tier_since: null,
+          })
           .eq("id", profile.id);
 
         await supabaseAdmin.from("subscriptions").insert({
           user_id: profile.id,
-          tier: profile.tier,
+          tier: billingTier,
           status: "active",
           billing_cycle: "monthly",
           amount_cop: amountCOP,
@@ -110,7 +129,7 @@ export async function GET(req: NextRequest) {
           current_period_end: newValidUntil,
         });
 
-        console.log(`[renew] renewed ${profile.id} until ${newValidUntil}`);
+        console.log(`[renew] renewed ${profile.id} as ${billingTier} until ${newValidUntil}`);
         renewed++;
       } else {
         // Charge failed — mark as past_due

@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useSearchParams } from "next/navigation";
 
 const TIER_ORDER: Tier[] = ["base", "inicio", "portafolio", "patrimonio"];
+const TIER_RANK: Record<Tier, number> = { base: 0, inicio: 1, portafolio: 2, patrimonio: 3 };
 
 const TIER_LABELS: Record<Tier, string> = {
   base: "Base",
@@ -49,15 +50,18 @@ function featureValue(tier: Tier, key: keyof typeof PLANS["base"]): string | boo
 }
 
 export default function PricingPage() {
-  const { tier: currentTier, isLoading, subscriptionStatus, subscriptionValidUntil, hasPaymentToken } = usePlan();
+  const {
+    tier: currentTier, isLoading,
+    subscriptionStatus, subscriptionValidUntil,
+    hasPaymentToken, pendingTier,
+  } = usePlan();
   const searchParams = useSearchParams();
   const [loadingTier, setLoadingTier] = useState<Tier | null>(null);
   const [cancelling, setCancelling] = useState(false);
 
-  // Show success toast when returning from Wompi
+  // Toast when returning from Wompi checkout
   const paymentDone = searchParams.get("payment") === "done";
   if (paymentDone && typeof window !== "undefined") {
-    // Only fire once by checking that we haven't shown it yet
     const key = "wompi_toast_shown";
     if (!sessionStorage.getItem(key)) {
       sessionStorage.setItem(key, "1");
@@ -73,9 +77,7 @@ export default function PricingPage() {
     try {
       const res = await fetch("/api/subscriptions/cancel", { method: "POST" });
       if (res.ok) {
-        toast.success("Suscripción cancelada", {
-          description: "Mantendrás acceso hasta que venza el período actual.",
-        });
+        toast.success("Suscripción cancelada", { description: "Mantendrás acceso hasta que venza el período actual." });
         setTimeout(() => window.location.reload(), 1500);
       } else {
         toast.error("No se pudo cancelar. Intenta de nuevo.");
@@ -87,28 +89,87 @@ export default function PricingPage() {
     }
   }
 
-  async function handleUpgrade(tier: Tier) {
+  async function handleTierChange(tier: Tier) {
     if (tier === "base") return;
     setLoadingTier(tier);
+
     try {
-      const res = await fetch("/api/subscriptions/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tier }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.url) {
-        toast.error("No se pudo crear el link de pago", {
-          description: data.error ?? "Intenta de nuevo.",
-        });
+      // Caso 1: reactivar el mismo tier dentro del período vigente
+      if (tier === currentTier && subscriptionStatus === "cancelled") {
+        const res = await fetch("/api/subscriptions/reactivate", { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+          toast.success("Plan reactivado", { description: "Tu suscripción sigue activa hasta el fin del período." });
+          setTimeout(() => window.location.reload(), 1500);
+        } else {
+          // Período vencido: mandar al checkout
+          if (data.error?.includes("venció")) {
+            await checkoutUpgrade(tier);
+          } else {
+            toast.error(data.error ?? "No se pudo reactivar.");
+          }
+        }
         return;
       }
-      window.location.href = data.url;
+
+      const isUpgrade = TIER_RANK[tier] > TIER_RANK[currentTier] ||
+        (subscriptionStatus === "cancelled" && tier !== currentTier);
+
+      if (isUpgrade) {
+        await checkoutUpgrade(tier);
+      } else {
+        // Downgrade: programar para el próximo ciclo
+        const res = await fetch("/api/subscriptions/schedule-downgrade", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tier }),
+        });
+        if (res.ok) {
+          toast.success(`Cambio programado a ${TIER_LABELS[tier]}`, {
+            description: "Al vencer tu período actual se aplicará el cambio y se cobrará el nuevo precio.",
+          });
+          setTimeout(() => window.location.reload(), 1500);
+        } else {
+          toast.error("No se pudo programar el cambio. Intenta de nuevo.");
+        }
+      }
     } catch {
-      toast.error("Error de conexión. Intenta de nuevo.");
+      toast.error("Error de conexión.");
     } finally {
       setLoadingTier(null);
     }
+  }
+
+  async function checkoutUpgrade(tier: Tier) {
+    const res = await fetch("/api/subscriptions/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.url) {
+      toast.error("No se pudo crear el link de pago", { description: data.error ?? "Intenta de nuevo." });
+      return;
+    }
+    window.location.href = data.url;
+  }
+
+  function getButtonLabel(tier: Tier): string {
+    if (loadingTier === tier) return "Procesando...";
+    if (tier === "base") return "Plan gratuito";
+    if (tier === pendingTier) return "Cambio programado";
+    if (tier === currentTier && subscriptionStatus === "active") return "Plan actual";
+    if (tier === currentTier && subscriptionStatus === "cancelled") return "Reactivar plan";
+    if (TIER_RANK[tier] > TIER_RANK[currentTier] || subscriptionStatus === "cancelled") return "Actualizar plan";
+    return "Cambiar al próximo ciclo";
+  }
+
+  function isButtonDisabled(tier: Tier): boolean {
+    if (loadingTier !== null) return true;
+    if (tier === "base") return true;
+    if (tier === pendingTier) return true;
+    if (tier === currentTier && subscriptionStatus === "active") return true;
+    return false;
   }
 
   return (
@@ -120,10 +181,36 @@ export default function PricingPage() {
         </p>
       </div>
 
+      {/* Banner de cambio pendiente */}
+      {!isLoading && pendingTier && (
+        <div className="flex items-center justify-between gap-3 p-4 rounded-xl border border-amber-200 bg-amber-50 text-sm">
+          <span className="text-amber-800">
+            Cambio programado a <span className="font-semibold">{TIER_LABELS[pendingTier]}</span> — se aplicará al vencer tu período actual.
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-amber-700 hover:bg-amber-100 shrink-0"
+            onClick={async () => {
+              await fetch("/api/subscriptions/schedule-downgrade", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ tier: currentTier }),
+              });
+              toast.success("Cambio cancelado");
+              setTimeout(() => window.location.reload(), 1000);
+            }}
+          >
+            Cancelar cambio
+          </Button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6 pt-4">
         {TIER_ORDER.map((tier) => {
           const plan = PLANS[tier];
-          const isCurrent = !isLoading && currentTier === tier;
+          const isCurrent = !isLoading && currentTier === tier && subscriptionStatus !== "cancelled";
+          const isPending = tier === pendingTier;
           const isPopular = tier === "portafolio";
 
           return (
@@ -132,6 +219,8 @@ export default function PricingPage() {
               className={`relative overflow-visible p-6 flex flex-col rounded-2xl border shadow-sm ${
                 isCurrent
                   ? "border-vensato-brand-primary ring-2 ring-vensato-brand-primary bg-vensato-surface"
+                  : isPending
+                  ? "border-amber-300 bg-vensato-surface"
                   : "border-vensato-border-subtle bg-vensato-surface"
               }`}
             >
@@ -147,6 +236,14 @@ export default function PricingPage() {
                 <div className="absolute -top-3 right-4">
                   <span className="bg-vensato-accent-punch text-white text-xs font-bold px-3 py-1 rounded-full">
                     Tu plan
+                  </span>
+                </div>
+              )}
+
+              {isPending && (
+                <div className="absolute -top-3 right-4">
+                  <span className="bg-amber-400 text-white text-xs font-bold px-3 py-1 rounded-full">
+                    Próximo ciclo
                   </span>
                 </div>
               )}
@@ -189,23 +286,19 @@ export default function PricingPage() {
               </div>
 
               <Button
-                onClick={() => handleUpgrade(tier)}
-                disabled={isCurrent || tier === "base" || loadingTier !== null}
+                onClick={() => handleTierChange(tier)}
+                disabled={isButtonDisabled(tier)}
                 className={`w-full font-semibold ${
                   isCurrent
                     ? "bg-vensato-brand-primary/20 text-vensato-brand-primary cursor-default"
+                    : isPending
+                    ? "bg-amber-100 text-amber-700 cursor-default"
                     : tier === "base"
                     ? "bg-vensato-base text-vensato-text-secondary cursor-default border border-vensato-border-subtle"
                     : "bg-vensato-brand-primary hover:bg-[#5C7D6E] text-white"
                 }`}
               >
-                {loadingTier === tier
-                  ? "Redirigiendo..."
-                  : isCurrent
-                  ? "Plan actual"
-                  : tier === "base"
-                  ? "Plan gratuito"
-                  : "Actualizar plan"}
+                {getButtonLabel(tier)}
               </Button>
             </Card>
           );
