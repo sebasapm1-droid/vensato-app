@@ -61,33 +61,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // ── 3. Fetch our reference from the payment link ──────────────────────────
-  // Wompi auto-generates transaction.reference; our reference is on the payment link
+  // ── 3. Look up userId + tier via payment_link_id stored in profiles ────────
   const linkId: string = transaction.payment_link_id ?? "";
   if (!linkId) {
     console.warn("[wompi-webhook] No payment_link_id in transaction");
     return NextResponse.json({ ok: true });
   }
 
-  const WOMPI_BASE = process.env.WOMPI_PUBLIC_KEY?.startsWith("pub_test_")
-    ? "https://sandbox.wompi.co/v1"
-    : "https://production.wompi.co/v1";
+  // wompi_customer_id was set to "{linkId}:{tier}" when the checkout was created
+  const { data: profile, error: profileLookupErr } = await supabaseAdmin
+    .from("profiles")
+    .select("id, wompi_customer_id")
+    .eq("wompi_customer_id", `${linkId}:inicio`)
+    .maybeSingle()
+    .then(async (r) => {
+      if (r.data) return r;
+      // try other tiers
+      for (const t of ["portafolio", "patrimonio"] as const) {
+        const res = await supabaseAdmin
+          .from("profiles")
+          .select("id, wompi_customer_id")
+          .eq("wompi_customer_id", `${linkId}:${t}`)
+          .maybeSingle();
+        if (res.data) return res;
+      }
+      return { data: null, error: null };
+    });
 
-  const linkRes = await fetch(`${WOMPI_BASE}/payment_links/${linkId}`, {
-    headers: { Authorization: `Bearer ${process.env.WOMPI_PRIVATE_KEY}` },
-  });
-  const linkBody = await linkRes.json();
-  const ref: string = linkBody?.data?.reference ?? "";
-  console.log("[wompi-webhook] payment link reference:", ref);
-
-  const match = ref.match(/^vensato-(inicio|portafolio|patrimonio)-(.+)$/);
-  if (!match) {
-    console.warn("[wompi-webhook] Unrecognised reference:", ref);
+  if (!profile) {
+    console.warn("[wompi-webhook] No profile found for link:", linkId);
     return NextResponse.json({ ok: true });
   }
 
-  const tier = match[1] as "inicio" | "portafolio" | "patrimonio";
-  const userId = match[2];
+  const [, tier] = (profile.wompi_customer_id as string).split(":") as [string, "inicio" | "portafolio" | "patrimonio"];
+  const userId = profile.id;
+  console.log("[wompi-webhook] matched userId:", userId, "tier:", tier);
   const validUntil = addDays(31);
 
   // ── 4. Update profile ──────────────────────────────────────────────────────

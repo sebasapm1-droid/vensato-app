@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdmin } from "@supabase/supabase-js";
 import { PLANS, Tier } from "@/lib/plans";
+
+const supabaseAdmin = createAdmin(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+);
 
 const WOMPI_BASE = process.env.WOMPI_PUBLIC_KEY?.startsWith("pub_test_")
   ? "https://sandbox.wompi.co/v1"
@@ -62,6 +68,14 @@ export async function POST(req: NextRequest) {
 
   console.log("[checkout] Wompi response:", JSON.stringify(body));
   const linkId = body.data?.id;
-  const url = linkId ? `https://checkout.wompi.co/l/${linkId}` : null;
+  if (!linkId) return NextResponse.json({ error: "Sin link ID" }, { status: 500 });
+
+  // Guardar mapeo linkId → tier para que el webhook pueda identificar el pago
+  await supabaseAdmin
+    .from("profiles")
+    .update({ wompi_customer_id: `${linkId}:${tier}` })
+    .eq("id", user.id);
+
+  const url = `https://checkout.wompi.co/l/${linkId}`;
   return NextResponse.json({ url });
 }
