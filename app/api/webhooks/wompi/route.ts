@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 3. Parse reference: vensato-{tier}-{userId} ───────────────────────────
+  console.log("[wompi-webhook] full transaction:", JSON.stringify(transaction));
   const ref: string = transaction.reference ?? "";
   const match = ref.match(/^vensato-(inicio|portafolio|patrimonio)-(.+)$/);
   if (!match) {
