@@ -192,11 +192,7 @@ export default function PricingPage() {
             size="sm"
             className="text-amber-700 hover:bg-amber-100 shrink-0"
             onClick={async () => {
-              await fetch("/api/subscriptions/schedule-downgrade", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ tier: currentTier }),
-              });
+              await fetch("/api/subscriptions/cancel-downgrade", { method: "POST" });
               toast.success("Cambio cancelado");
               setTimeout(() => window.location.reload(), 1000);
             }}

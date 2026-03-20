@@ -8,10 +8,10 @@ export interface UserSubscription {
 
 export function getEffectiveTier(user: UserSubscription): Tier {
   if (user.tier === 'base') return 'base'
-  if (user.subscription_status === 'cancelled') return 'base'
-  if (user.subscription_valid_until) {
-    if (new Date(user.subscription_valid_until) < new Date()) return 'base'
-  }
+  // Degradar a base solo si el período ya venció
+  if (user.subscription_valid_until && new Date(user.subscription_valid_until) < new Date()) return 'base'
+  // Sin fecha de vencimiento y no activo → base
+  if (!user.subscription_valid_until && user.subscription_status !== 'active') return 'base'
   return user.tier
 }
 
