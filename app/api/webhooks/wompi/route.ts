@@ -61,9 +61,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // ── 3. Parse reference: vensato-{tier}-{userId} ───────────────────────────
-  console.log("[wompi-webhook] full transaction:", JSON.stringify(transaction));
-  const ref: string = transaction.reference ?? "";
+  // ── 3. Fetch our reference from the payment link ──────────────────────────
+  // Wompi auto-generates transaction.reference; our reference is on the payment link
+  const linkId: string = transaction.payment_link_id ?? "";
+  if (!linkId) {
+    console.warn("[wompi-webhook] No payment_link_id in transaction");
+    return NextResponse.json({ ok: true });
+  }
+
+  const WOMPI_BASE = process.env.WOMPI_PUBLIC_KEY?.startsWith("pub_test_")
+    ? "https://sandbox.wompi.co/v1"
+    : "https://production.wompi.co/v1";
+
+  const linkRes = await fetch(`${WOMPI_BASE}/payment_links/${linkId}`, {
+    headers: { Authorization: `Bearer ${process.env.WOMPI_PRIVATE_KEY}` },
+  });
+  const linkBody = await linkRes.json();
+  const ref: string = linkBody?.data?.reference ?? "";
+  console.log("[wompi-webhook] payment link reference:", ref);
+
   const match = ref.match(/^vensato-(inicio|portafolio|patrimonio)-(.+)$/);
   if (!match) {
     console.warn("[wompi-webhook] Unrecognised reference:", ref);
