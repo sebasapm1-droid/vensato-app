@@ -27,10 +27,7 @@ function verifyWompiSignature(event: any, secret: string): boolean {
   const str = values.join("") + secret;
   const expected = createHash("sha256").update(str).digest("hex");
 
-  console.log("[wompi-webhook] sig properties:", properties);
-  console.log("[wompi-webhook] sig values:", values);
-  console.log("[wompi-webhook] computed:", expected);
-  console.log("[wompi-webhook] expected:", checksum);
+  console.log("[wompi-webhook] computed:", expected, "| body checksum:", checksum);
 
   return expected === checksum;
 }
@@ -51,10 +48,17 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 1. Verify signature ────────────────────────────────────────────────────
-  const secret = process.env.WOMPI_EVENTS_SECRET ?? "";
-  const signatureOk = verifyWompiSignature(event, secret);
-  // TODO: re-enable after debug
-  if (!signatureOk) console.warn("[wompi-webhook] Invalid signature (not blocking)");
+  const eventsSecret = process.env.WOMPI_EVENTS_SECRET ?? "";
+  const integritySecret = process.env.WOMPI_INTEGRITY_SECRET ?? "";
+
+  const okWithEvents = verifyWompiSignature(event, eventsSecret);
+  const okWithIntegrity = verifyWompiSignature(event, integritySecret);
+  console.log("[wompi-webhook] events ok:", okWithEvents, "| integrity ok:", okWithIntegrity);
+
+  if (!okWithEvents && !okWithIntegrity) {
+    console.warn("[wompi-webhook] Invalid signature");
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
 
   if (transaction.status !== "APPROVED") {
     return NextResponse.json({ ok: true });
