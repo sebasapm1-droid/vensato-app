@@ -52,8 +52,9 @@ interface AppStore {
   contracts: Contract[];
   vaultDocuments: VaultDocument[];
   userConfig: UserConfig;
+  profileRaw: Record<string, any> | null; // cached raw profile for usePlan
 
-  setAll: (data: Partial<Pick<AppStore, "properties" | "tenants" | "charges" | "contracts" | "vaultDocuments" | "userConfig">>) => void;
+  setAll: (data: Partial<Pick<AppStore, "properties" | "tenants" | "charges" | "contracts" | "vaultDocuments" | "userConfig" | "profileRaw">>) => void;
   setLoading: (v: boolean) => void;
 
   // Properties
@@ -111,6 +112,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   charges: [],
   contracts: [],
   vaultDocuments: [],
+  profileRaw: null,
   userConfig: {
     fullName: "", email: "", phone: "", nit: "",
     bankName: "", accountType: "Ahorros", accountNumber: "", accountHolder: "",

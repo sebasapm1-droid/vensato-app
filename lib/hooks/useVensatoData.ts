@@ -99,8 +99,9 @@ export function useVensatoData() {
     async function load() {
       store.setLoading(true);
       try {
-        const [props, tenants, charges, contracts, docs, profile] = await Promise.all([
-          getProperties(), getTenants(), getCharges(), getContracts(), getDocuments(), getProfile(),
+        // Documents are loaded lazily in the vault section — excluded here to speed up initial load
+        const [props, tenants, charges, contracts, profile] = await Promise.all([
+          getProperties(), getTenants(), getCharges(), getContracts(), getProfile(),
         ]);
 
         store.setAll({
@@ -108,8 +109,8 @@ export function useVensatoData() {
           tenants: tenants.map(dbTenantToStore),
           charges: charges.map(dbChargeToStore),
           contracts: contracts.map(dbContractToStore),
-          vaultDocuments: docs.map(dbDocToStore),
           userConfig: profile ? dbProfileToStore(profile) : store.userConfig,
+          profileRaw: profile ?? null,
         });
       } catch (err) {
         console.error("[useVensatoData] Failed to load data:", err);
