@@ -14,7 +14,7 @@ export function usePlan() {
       if (!user) { setIsLoading(false); return }
       supabase
         .from('profiles')
-        .select('tier, subscription_status, subscription_valid_until')
+        .select('tier, subscription_status, subscription_valid_until, wompi_payment_token')
         .eq('id', user.id)
         .single()
         .then(({ data }) => { setProfile(data); setIsLoading(false) })
@@ -35,6 +35,9 @@ export function usePlan() {
   return {
     tier: getEffectiveTier(profile),
     plan: getPlan(profile),
+    subscriptionStatus: profile.subscription_status as string,
+    subscriptionValidUntil: profile.subscription_valid_until as string | null,
+    hasPaymentToken: !!profile.wompi_payment_token,
     isLoading: false,
     can: (feature: keyof PlanConfig) => can(profile, feature),
     canAddProperty: (count: number) => canAddProperty(profile, count),

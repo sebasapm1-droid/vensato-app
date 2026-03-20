@@ -13,8 +13,7 @@ function addDays(days: number): string {
   return d.toISOString();
 }
 
-// Wompi checksum: SHA256 of transaction fields concatenated with the events secret
-// https://docs.wompi.co/docs/colombia/pagos-presenciales-terminales/notificaciones-de-eventos
+// Wompi signature: SHA256 of specific transaction fields + events_secret (no HMAC)
 function verifyWompiSignature(transaction: any, checksum: string, secret: string): boolean {
   const str =
     String(transaction.id) +
@@ -25,14 +24,12 @@ function verifyWompiSignature(transaction: any, checksum: string, secret: string
     String(transaction.status ?? "") +
     secret;
   const expected = createHash("sha256").update(str).digest("hex");
-  console.log("[wompi-webhook] computed checksum:", expected, "received:", checksum);
   return expected === checksum;
 }
 
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
 
-  // ── 2. Parse event first (need transaction fields for signature) ───────────
   let event: any;
   try {
     event = JSON.parse(rawBody);
@@ -42,69 +39,57 @@ export async function POST(req: NextRequest) {
 
   const transaction = event?.data?.transaction;
   if (!transaction) {
-    return NextResponse.json({ ok: true }); // ignore non-transaction events
+    return NextResponse.json({ ok: true });
   }
 
-  // ── 1. Verify Wompi signature ──────────────────────────────────────────────
+  // ── 1. Verify signature ────────────────────────────────────────────────────
   const wompiSignature = req.headers.get("x-event-checksum") ?? "";
   const secret = process.env.WOMPI_EVENTS_SECRET ?? "";
 
-  // TODO: re-enable once signature algorithm is confirmed
-  // if (!verifyWompiSignature(transaction, wompiSignature, secret)) {
-  //   console.warn("[wompi-webhook] Invalid signature — rejecting");
-  //   return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-  // }
-  verifyWompiSignature(transaction, wompiSignature, secret); // logs only
+  if (!verifyWompiSignature(transaction, wompiSignature, secret)) {
+    console.warn("[wompi-webhook] Invalid signature");
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
 
   if (transaction.status !== "APPROVED") {
-    // Not approved — nothing to do
     return NextResponse.json({ ok: true });
   }
 
-  // ── 3. Look up userId + tier via payment_link_id stored in profiles ────────
+  // ── 2. Look up checkout session ────────────────────────────────────────────
   const linkId: string = transaction.payment_link_id ?? "";
   if (!linkId) {
-    console.warn("[wompi-webhook] No payment_link_id in transaction");
+    console.warn("[wompi-webhook] No payment_link_id");
     return NextResponse.json({ ok: true });
   }
 
-  // wompi_customer_id was set to "{linkId}:{tier}" when the checkout was created
-  const { data: profile, error: profileLookupErr } = await supabaseAdmin
-    .from("profiles")
-    .select("id, wompi_customer_id")
-    .eq("wompi_customer_id", `${linkId}:inicio`)
-    .maybeSingle()
-    .then(async (r) => {
-      if (r.data) return r;
-      // try other tiers
-      for (const t of ["portafolio", "patrimonio"] as const) {
-        const res = await supabaseAdmin
-          .from("profiles")
-          .select("id, wompi_customer_id")
-          .eq("wompi_customer_id", `${linkId}:${t}`)
-          .maybeSingle();
-        if (res.data) return res;
-      }
-      return { data: null, error: null };
-    });
+  const { data: session } = await supabaseAdmin
+    .from("checkout_sessions")
+    .select("id, user_id, tier")
+    .eq("payment_link_id", linkId)
+    .eq("status", "pending")
+    .maybeSingle();
 
-  if (!profile) {
-    console.warn("[wompi-webhook] No profile found for link:", linkId);
+  if (!session) {
+    console.warn("[wompi-webhook] No checkout session for link:", linkId);
     return NextResponse.json({ ok: true });
   }
 
-  const [, tier] = (profile.wompi_customer_id as string).split(":") as [string, "inicio" | "portafolio" | "patrimonio"];
-  const userId = profile.id;
-  console.log("[wompi-webhook] matched userId:", userId, "tier:", tier);
+  const { id: sessionId, user_id: userId, tier } = session;
   const validUntil = addDays(31);
+  const now = new Date().toISOString();
 
-  // ── 4. Update profile ──────────────────────────────────────────────────────
+  console.log(`[wompi-webhook] processing: userId=${userId} tier=${tier}`);
+
+  // ── 3. Update profile ──────────────────────────────────────────────────────
+  const cardToken: string | null = transaction.payment_method?.token ?? null;
+
   const { error: profileErr } = await supabaseAdmin
     .from("profiles")
     .update({
       tier,
       subscription_status: "active",
       subscription_valid_until: validUntil,
+      ...(cardToken ? { wompi_payment_token: cardToken, wompi_payment_token_at: now } : {}),
     })
     .eq("id", userId);
 
@@ -113,8 +98,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "DB error" }, { status: 500 });
   }
 
-  // ── 5. Insert into subscriptions table ────────────────────────────────────
-  const now = new Date().toISOString();
+  // ── 4. Mark checkout session completed ────────────────────────────────────
+  await supabaseAdmin
+    .from("checkout_sessions")
+    .update({ status: "completed" })
+    .eq("id", sessionId);
+
+  // ── 5. Insert subscription record ─────────────────────────────────────────
   await supabaseAdmin.from("subscriptions").insert({
     user_id: userId,
     tier,
@@ -126,6 +116,6 @@ export async function POST(req: NextRequest) {
     current_period_end: validUntil,
   });
 
-  console.log(`[wompi-webhook] ${userId} upgraded to ${tier}, valid until ${validUntil}`);
+  console.log(`[wompi-webhook] upgraded userId=${userId} to ${tier}, valid until ${validUntil}`);
   return NextResponse.json({ ok: true });
 }

@@ -49,9 +49,10 @@ function featureValue(tier: Tier, key: keyof typeof PLANS["base"]): string | boo
 }
 
 export default function PricingPage() {
-  const { tier: currentTier, isLoading } = usePlan();
+  const { tier: currentTier, isLoading, subscriptionStatus, subscriptionValidUntil, hasPaymentToken } = usePlan();
   const searchParams = useSearchParams();
   const [loadingTier, setLoadingTier] = useState<Tier | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   // Show success toast when returning from Wompi
   const paymentDone = searchParams.get("payment") === "done";
@@ -63,6 +64,26 @@ export default function PricingPage() {
       toast.success("¡Pago recibido!", {
         description: "Tu plan se actualizará en unos segundos. Si no cambia, recarga la página.",
       });
+    }
+  }
+
+  async function handleCancel() {
+    if (!confirm("¿Seguro que quieres cancelar? Mantendrás el acceso hasta que venza el período actual.")) return;
+    setCancelling(true);
+    try {
+      const res = await fetch("/api/subscriptions/cancel", { method: "POST" });
+      if (res.ok) {
+        toast.success("Suscripción cancelada", {
+          description: "Mantendrás acceso hasta que venza el período actual.",
+        });
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        toast.error("No se pudo cancelar. Intenta de nuevo.");
+      }
+    } catch {
+      toast.error("Error de conexión.");
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -190,6 +211,44 @@ export default function PricingPage() {
           );
         })}
       </div>
+
+      {/* Banner de estado de suscripción */}
+      {!isLoading && currentTier !== "base" && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-xl border border-vensato-border-subtle bg-vensato-surface">
+          <div className="text-sm text-vensato-text-secondary">
+            {subscriptionStatus === "cancelled" ? (
+              <span>
+                Tu plan <span className="font-semibold text-vensato-text-main">{TIER_LABELS[currentTier]}</span> está cancelado.
+                {subscriptionValidUntil && (
+                  <> Acceso hasta el <span className="font-semibold text-vensato-text-main">{new Date(subscriptionValidUntil).toLocaleDateString("es-CO")}</span>.</>
+                )}
+              </span>
+            ) : subscriptionStatus === "past_due" ? (
+              <span className="text-red-500">
+                El último cobro falló. Actualiza tu método de pago para no perder el acceso.
+              </span>
+            ) : (
+              <span>
+                {hasPaymentToken ? "Renovación automática" : "Renovación manual"} ·{" "}
+                {subscriptionValidUntil && (
+                  <>Próximo cobro el <span className="font-semibold text-vensato-text-main">{new Date(subscriptionValidUntil).toLocaleDateString("es-CO")}</span></>
+                )}
+              </span>
+            )}
+          </div>
+          {subscriptionStatus === "active" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="text-red-500 hover:text-red-600 hover:bg-red-50 shrink-0"
+            >
+              {cancelling ? "Cancelando..." : "Cancelar plan"}
+            </Button>
+          )}
+        </div>
+      )}
 
       <p className="text-xs text-vensato-text-secondary text-center">
         Los pagos se procesan de forma segura mediante Wompi
