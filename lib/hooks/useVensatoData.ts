@@ -88,7 +88,7 @@ function dbProfileToStore(p: any) {
   };
 }
 
-export function useVensatoData() {
+export function useVensatoData(userId: string) {
   const store = useAppStore();
   const loaded = useRef(false);
 
@@ -101,7 +101,7 @@ export function useVensatoData() {
       try {
         // Documents are loaded lazily in the vault section — excluded here to speed up initial load
         const [props, tenants, charges, contracts, profile] = await Promise.all([
-          getProperties(), getTenants(), getCharges(), getContracts(), getProfile(),
+          getProperties(), getTenants(), getCharges(), getContracts(), getProfile(userId),
         ]);
 
         store.setAll({

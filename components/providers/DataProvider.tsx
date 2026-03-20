@@ -32,8 +32,8 @@ function AppSkeleton() {
   );
 }
 
-export function DataProvider({ children }: { children: React.ReactNode }) {
-  useVensatoData();
+export function DataProvider({ children, userId }: { children: React.ReactNode; userId: string }) {
+  useVensatoData(userId);
   const isLoading = useAppStore(s => s.isLoading);
 
   if (isLoading) return <AppSkeleton />;

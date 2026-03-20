@@ -23,7 +23,7 @@ export default async function DashboardLayout({
         <Header user={user} />
         <main className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="max-w-7xl mx-auto h-full">
-            <DataProvider>
+            <DataProvider userId={user.id}>
               {children}
             </DataProvider>
           </div>

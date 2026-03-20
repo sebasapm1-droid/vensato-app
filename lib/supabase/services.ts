@@ -5,11 +5,13 @@
 import { createClient } from "@/lib/supabase/client";
 
 // ─── Profile ──────────────────────────────────────────────────────────────────
-export async function getProfile() {
+export async function getProfile(userId?: string) {
   const sb = createClient();
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return null;
-  const { data } = await sb.from("profiles").select("*").eq("id", user.id).single();
+  const id = userId ?? (await sb.auth.getUser()).data.user?.id;
+  if (!id) return null;
+  const { data } = await sb.from("profiles")
+    .select("id,full_name,email,phone,cedula,bank_name,bank_account_type,bank_account_number,bank_account_holder,bank_account_key,tier,subscription_status,subscription_valid_until,wompi_payment_token,pending_tier,pending_tier_since")
+    .eq("id", id).single();
   return data;
 }
 
@@ -28,7 +30,9 @@ export async function upsertProfile(profile: {
 // ─── Properties ───────────────────────────────────────────────────────────────
 export async function getProperties() {
   const sb = createClient();
-  const { data, error } = await sb.from("properties").select("*").order("created_at", { ascending: false });
+  const { data, error } = await sb.from("properties")
+    .select("id,alias,type,city,neighborhood,address,area_m2,bedrooms,bathrooms,estrato,commercial_value,current_rent,admin_fee,predial_annual,notes,status")
+    .order("created_at", { ascending: false });
   if (error) throw error;
   return data ?? [];
 }
@@ -60,7 +64,7 @@ export async function getTenants() {
   const sb = createClient();
   const { data, error } = await sb
     .from("tenants")
-    .select("*, properties(alias)")
+    .select("id,full_name,cedula,email,phone,property_id,properties(alias)")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data ?? [];
@@ -92,7 +96,7 @@ export async function getCharges() {
   const sb = createClient();
   const { data, error } = await sb
     .from("charges")
-    .select("*, tenants(full_name), properties(alias)")
+    .select("id,tenant_id,concept,amount,due_date,status,tenants(full_name),properties(alias)")
     .order("due_date", { ascending: true });
   if (error) throw error;
   return data ?? [];
@@ -125,7 +129,7 @@ export async function getContracts() {
   const sb = createClient();
   const { data, error } = await sb
     .from("contracts")
-    .select("*, tenants(full_name, cedula), properties(alias)")
+    .select("id,property_id,tenant_id,start_date,end_date,duration_months,current_rent,increment_type,status,created_at,tenants(full_name,cedula),properties(alias)")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data ?? [];
