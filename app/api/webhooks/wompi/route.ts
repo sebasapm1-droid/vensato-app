@@ -27,9 +27,8 @@ function verifyWompiSignature(event: any, secret: string): boolean {
   const str = values.join("") + secret;
   const expected = createHash("sha256").update(str).digest("hex");
 
-  const inputWithoutSecret = values.join("");
-  console.log("[wompi-webhook] hash input (no secret):", inputWithoutSecret);
-  console.log("[wompi-webhook] computed:", expected, "| expected:", checksum);
+  console.log("[wompi-webhook] hash input:", values.join(""), "| expected checksum:", checksum);
+  console.log("[wompi-webhook] computed:", expected);
 
   return expected === checksum;
 }
@@ -55,6 +54,9 @@ export async function POST(req: NextRequest) {
   // ── 1. Verify signature ────────────────────────────────────────────────────
   const eventsSecret = process.env.WOMPI_EVENTS_SECRET ?? "";
   const integritySecret = process.env.WOMPI_INTEGRITY_SECRET ?? "";
+
+  console.log("[wompi-webhook] events secret prefix:", eventsSecret.slice(0, 20));
+  console.log("[wompi-webhook] integrity secret prefix:", integritySecret.slice(0, 20));
 
   const okWithEvents = verifyWompiSignature(event, eventsSecret);
   const okWithIntegrity = verifyWompiSignature(event, integritySecret);
