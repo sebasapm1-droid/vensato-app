@@ -27,7 +27,9 @@ function verifyWompiSignature(event: any, secret: string): boolean {
   const str = values.join("") + secret;
   const expected = createHash("sha256").update(str).digest("hex");
 
-  console.log("[wompi-webhook] computed:", expected, "| body checksum:", checksum);
+  const inputWithoutSecret = values.join("");
+  console.log("[wompi-webhook] hash input (no secret):", inputWithoutSecret);
+  console.log("[wompi-webhook] computed:", expected, "| expected:", checksum);
 
   return expected === checksum;
 }
