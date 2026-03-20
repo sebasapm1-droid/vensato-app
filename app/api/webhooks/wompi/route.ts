@@ -55,8 +55,8 @@ export async function POST(req: NextRequest) {
   const eventsSecret = process.env.WOMPI_EVENTS_SECRET ?? "";
   const integritySecret = process.env.WOMPI_INTEGRITY_SECRET ?? "";
 
-  console.log("[wompi-webhook] events secret prefix:", eventsSecret.slice(0, 20));
-  console.log("[wompi-webhook] integrity secret prefix:", integritySecret.slice(0, 20));
+  console.log("[wompi-webhook] events secret full:", JSON.stringify(eventsSecret));
+  console.log("[wompi-webhook] integrity secret full:", JSON.stringify(integritySecret));
 
   const okWithEvents = verifyWompiSignature(event, eventsSecret);
   const okWithIntegrity = verifyWompiSignature(event, integritySecret);
