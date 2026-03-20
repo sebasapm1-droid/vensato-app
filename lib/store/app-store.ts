@@ -45,6 +45,7 @@ export interface UserConfig {
 
 // ─── Store Interface ───────────────────────────────────────────────────────────
 interface AppStore {
+  isLoading: boolean;
   properties: Property[];
   tenants: Tenant[];
   charges: Charge[];
@@ -53,6 +54,7 @@ interface AppStore {
   userConfig: UserConfig;
 
   setAll: (data: Partial<Pick<AppStore, "properties" | "tenants" | "charges" | "contracts" | "vaultDocuments" | "userConfig">>) => void;
+  setLoading: (v: boolean) => void;
 
   // Properties
   addProperty: (p: Omit<Property, "id">) => Promise<Property>;
@@ -102,6 +104,7 @@ function addMonths(dateStr: string, months: number): string {
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 export const useAppStore = create<AppStore>((set, get) => ({
+  isLoading: true,
   properties: [],
   tenants: [],
   charges: [],
@@ -113,6 +116,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setAll: (data) => set(s => ({ ...s, ...data })),
+  setLoading: (v) => set({ isLoading: v }),
 
   // ── Properties ──
   addProperty: async (p) => {

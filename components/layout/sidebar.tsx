@@ -4,15 +4,24 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Building2, Users, Wallet,
-  FileText, FolderOpen, PieChart, Settings, LogOut,
+  FileText, FolderOpen, PieChart, Settings, LogOut, Zap,
 } from "lucide-react";
 import { logout } from "@/app/actions/auth";
 import { toast } from "sonner";
 import { useAppStore } from "@/lib/store/app-store";
+import { usePlan } from "@/hooks/usePlan";
+
+const TIER_LABELS: Record<string, string> = {
+  base: "Plan Base",
+  inicio: "Plan Inicio",
+  portafolio: "Plan Portafolio",
+  patrimonio: "Plan Patrimonio",
+};
 
 export function Sidebar() {
   const router = useRouter();
   const { charges, userConfig } = useAppStore();
+  const { tier } = usePlan();
 
   // Live badge: count pending + overdue charges
   const alertCharges = charges.filter(c => c.status === "pending" || c.status === "overdue").length;
@@ -48,6 +57,7 @@ export function Sidebar() {
       </nav>
 
       <div className="p-4 border-t border-vensato-border-subtle space-y-1">
+        <SidebarLink href="/pricing" icon={<Zap size={20} />} label="Planes" />
         <SidebarLink href="/configuracion" icon={<Settings size={20} />} label="Configuración" />
         <button
           onClick={handleLogout}
@@ -64,7 +74,7 @@ export function Sidebar() {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-medium text-vensato-text-main truncate">{displayName}</p>
-            <p className="text-xs text-vensato-text-secondary">Plan Base</p>
+            <p className="text-xs text-vensato-text-secondary">{TIER_LABELS[tier] ?? "Plan Base"}</p>
           </div>
         </div>
       </div>

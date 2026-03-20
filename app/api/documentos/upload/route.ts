@@ -1,13 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { uploadFile } from "@/lib/r2";
+import { requireFeature } from "@/lib/middleware/requirePlan";
+import { getPlan } from "@/lib/permissions";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const guard = await requireFeature("hasBovedaDocs")(req);
+  if (guard) return guard;
+
   const supabase = await createClient();
 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+
+  // Verificar límite de almacenamiento
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("tier, subscription_status, subscription_valid_until")
+    .eq("id", user.id)
+    .single();
+
+  if (profile) {
+    const plan = getPlan(profile);
+    const limitBytes = plan.bovedaStorageGB * 1024 * 1024 * 1024;
+    const { data: docs } = await supabase
+      .from("documentos")
+      .select("tamanio_bytes")
+      .eq("user_id", user.id);
+    const usedBytes = docs?.reduce((s, d) => s + (d.tamanio_bytes ?? 0), 0) ?? 0;
+    // Leemos el tamaño del archivo del header para la validación previa
+    const contentLength = Number(req.headers.get("content-length") ?? 0);
+    if (usedBytes + contentLength > limitBytes) {
+      return NextResponse.json({ error: "storage_limit_reached", message: "Has alcanzado el límite de almacenamiento de tu plan." }, { status: 403 });
+    }
   }
 
   let formData: FormData;

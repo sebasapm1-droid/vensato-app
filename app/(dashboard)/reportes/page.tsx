@@ -5,7 +5,9 @@ import { Card } from "@/components/ui/card";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend,
 } from "recharts";
-import { TrendingUp, Building2, Users, AlertCircle } from "lucide-react";
+import { TrendingUp, Building2, AlertCircle, Lock } from "lucide-react";
+import { PlanGate } from "@/components/PlanGate";
+import { Button } from "@/components/ui/button";
 
 const COLORS = ["#6B9080", "#E07A5F", "#F2CC8F", "#81B29A", "#3D405B"];
 
@@ -76,57 +78,76 @@ export default function ReportesPage() {
         ))}
       </div>
 
-      {/* Charts row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Income vs Expenses line chart */}
-        <Card className="col-span-2 p-6 border-vensato-border-subtle bg-vensato-surface shadow-sm rounded-xl">
-          <h3 className="font-heading font-bold text-base text-vensato-text-main mb-1">Ingresos vs Gastos</h3>
-          <p className="text-xs text-vensato-text-secondary mb-5">Últimos 6 meses</p>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={monthlyData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="mes" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-              <YAxis tickFormatter={formatCOP} tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(v: any) => [new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(Number(v))]} />
-              <Legend />
-              <Line type="monotone" dataKey="ingresos" name="Ingresos" stroke="#6B9080" strokeWidth={2.5} dot={{ r: 4 }} />
-              <Line type="monotone" dataKey="gastos" name="Gastos" stroke="#E07A5F" strokeWidth={2.5} dot={{ r: 4 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </Card>
+      <PlanGate
+        feature="hasReportesAvanzados"
+        fallback={
+          <Card className="p-12 border-vensato-border-subtle bg-vensato-surface shadow-sm rounded-xl flex flex-col items-center text-center space-y-4">
+            <div className="w-14 h-14 rounded-full bg-vensato-brand-primary/10 flex items-center justify-center">
+              <Lock className="h-6 w-6 text-vensato-brand-primary" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-heading font-bold text-lg text-vensato-text-main">Reportes avanzados bloqueados</p>
+              <p className="text-sm text-vensato-text-secondary max-w-sm">
+                Las gráficas de ingresos, gastos, ocupación y cap rate están disponibles desde el plan{" "}
+                <span className="font-semibold text-vensato-brand-primary">Portafolio</span>.
+              </p>
+            </div>
+            <Button onClick={() => window.location.href = "/pricing"} className="bg-vensato-brand-primary hover:bg-[#5C7D6E] text-white">
+              Ver planes
+            </Button>
+          </Card>
+        }
+      >
+        {/* Charts row */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Card className="col-span-2 p-6 border-vensato-border-subtle bg-vensato-surface shadow-sm rounded-xl">
+            <h3 className="font-heading font-bold text-base text-vensato-text-main mb-1">Ingresos vs Gastos</h3>
+            <p className="text-xs text-vensato-text-secondary mb-5">Últimos 6 meses</p>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={monthlyData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="mes" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={formatCOP} tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(v: any) => [new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(Number(v))]} />
+                <Legend />
+                <Line type="monotone" dataKey="ingresos" name="Ingresos" stroke="#6B9080" strokeWidth={2.5} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="gastos" name="Gastos" stroke="#E07A5F" strokeWidth={2.5} dot={{ r: 4 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </Card>
 
-        {/* Occupancy pie */}
+          <Card className="p-6 border-vensato-border-subtle bg-vensato-surface shadow-sm rounded-xl">
+            <h3 className="font-heading font-bold text-base text-vensato-text-main mb-1">Ocupación</h3>
+            <p className="text-xs text-vensato-text-secondary mb-5">Del portafolio completo</p>
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={occupancyPie} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={4} dataKey="value"
+                  label={({ name, percent }: any) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false} fontSize={11}>
+                  {occupancyPie.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </Card>
+        </div>
+
+        {/* Cap Rate per property */}
         <Card className="p-6 border-vensato-border-subtle bg-vensato-surface shadow-sm rounded-xl">
-          <h3 className="font-heading font-bold text-base text-vensato-text-main mb-1">Ocupación</h3>
-          <p className="text-xs text-vensato-text-secondary mb-5">Del portafolio completo</p>
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie data={occupancyPie} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={4} dataKey="value"
-                label={({ name, percent }: any) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false} fontSize={11}>
-                {occupancyPie.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
-              </Pie>
-              <Tooltip />
-            </PieChart>
+          <h3 className="font-heading font-bold text-base text-vensato-text-main mb-1">Cap Rate por Propiedad</h3>
+          <p className="text-xs text-vensato-text-secondary mb-5">Retorno anual neto sobre precio de compra (%)</p>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={capRateData} barSize={32}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+              <YAxis unit="%" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+              <Tooltip formatter={(v: any) => [`${Number(v).toFixed(1)}%`, "Cap Rate"]} />
+              <Bar dataKey="capRate" name="Cap Rate" fill="#6B9080" radius={[6, 6, 0, 0]}>
+                {capRateData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
         </Card>
-      </div>
-
-      {/* Cap Rate per property */}
-      <Card className="p-6 border-vensato-border-subtle bg-vensato-surface shadow-sm rounded-xl">
-        <h3 className="font-heading font-bold text-base text-vensato-text-main mb-1">Cap Rate por Propiedad</h3>
-        <p className="text-xs text-vensato-text-secondary mb-5">Retorno anual neto sobre precio de compra (%)</p>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={capRateData} barSize={32}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-            <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-            <YAxis unit="%" tick={{ fontSize: 10, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-            <Tooltip formatter={(v: any) => [`${Number(v).toFixed(1)}%`, "Cap Rate"]} />
-            <Bar dataKey="capRate" name="Cap Rate" fill="#6B9080" radius={[6, 6, 0, 0]}>
-              {capRateData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </Card>
+      </PlanGate>
     </div>
   );
 }

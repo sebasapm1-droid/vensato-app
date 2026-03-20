@@ -13,6 +13,8 @@ import { formatCOP } from "@/lib/utils/mock-data";
 import { Plus, MoreHorizontal, X, Pencil, Trash2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { usePlan } from "@/hooks/usePlan";
+import { UpgradeModal } from "@/components/UpgradeModal";
 
 const propertyTypes = ["Apartamento", "Casa", "Local", "Bodega", "Oficina", "Lote", "Finca"];
 
@@ -25,12 +27,18 @@ const emptyForm = {
 
 export default function PropiedadesPage() {
   const { properties: props, addProperty, updateProperty, deleteProperty } = useAppStore();
+  const { canAddProperty } = usePlan();
   const [showModal, setShowModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [editTarget, setEditTarget] = useState<Property | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [saving, setSaving] = useState(false);
 
   function openCreate() {
+    if (!canAddProperty(props.length)) {
+      setShowUpgradeModal(true);
+      return;
+    }
     setEditTarget(null);
     setForm({ ...emptyForm });
     setShowModal(true);
@@ -94,6 +102,9 @@ export default function PropiedadesPage() {
 
   return (
     <div className="space-y-6">
+      {showUpgradeModal && (
+        <UpgradeModal feature="maxProperties" onClose={() => setShowUpgradeModal(false)} />
+      )}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="font-heading font-bold text-2xl text-vensato-text-main">Propiedades</h1>

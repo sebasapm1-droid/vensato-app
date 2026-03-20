@@ -97,6 +97,7 @@ export function useVensatoData() {
     loaded.current = true;
 
     async function load() {
+      store.setLoading(true);
       try {
         const [props, tenants, charges, contracts, docs, profile] = await Promise.all([
           getProperties(), getTenants(), getCharges(), getContracts(), getDocuments(), getProfile(),
@@ -112,6 +113,8 @@ export function useVensatoData() {
         });
       } catch (err) {
         console.error("[useVensatoData] Failed to load data:", err);
+      } finally {
+        store.setLoading(false);
       }
     }
 

@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useDocumentos, type Documento } from "@/hooks/useDocumentos";
+import { usePlan } from "@/hooks/usePlan";
+import { Lock } from "lucide-react";
 
 // ─── Tipos de documento disponibles en la UI ──────────────────────────────────
 
@@ -47,6 +49,7 @@ function formatDate(iso: string): string {
 export default function DocumentosPage() {
   const { properties, tenants } = useAppStore();
   const { subirDocumento, obtenerUrlDescarga, eliminarDocumento, loading: hookLoading } = useDocumentos();
+  const { can, isLoading: planLoading } = usePlan();
 
   // Lista de documentos cargados desde R2
   const [documentos, setDocumentos] = useState<Documento[]>([]);
@@ -239,6 +242,26 @@ export default function DocumentosPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const totalDocs = documentos.length;
+
+  if (!planLoading && !can("hasBovedaDocs")) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 space-y-5 text-center">
+        <div className="w-16 h-16 rounded-full bg-vensato-brand-primary/10 flex items-center justify-center">
+          <Lock className="h-7 w-7 text-vensato-brand-primary" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="font-heading font-bold text-xl text-vensato-text-main">Bóveda Documental bloqueada</h2>
+          <p className="text-sm text-vensato-text-secondary max-w-sm">
+            Esta función está disponible desde el plan <span className="font-semibold text-vensato-brand-primary">Inicio</span>.
+            Actualiza tu plan para almacenar contratos, cédulas y documentos de tus inquilinos.
+          </p>
+        </div>
+        <Button onClick={() => window.location.href = "/pricing"} className="bg-vensato-brand-primary hover:bg-[#5C7D6E] text-white">
+          Ver planes
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
