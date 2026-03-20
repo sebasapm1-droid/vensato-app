@@ -47,7 +47,8 @@ export async function POST(req: NextRequest) {
   const secret = process.env.WOMPI_EVENTS_SECRET ?? "";
 
   const signatureOk = verifyWompiSignature(transaction, wompiSignature, secret);
-  console.log("[wompi-webhook] signature ok:", signatureOk, "event nonce:", event.nonce);
+  console.log("[wompi-webhook] event.signature:", JSON.stringify(event.signature));
+  console.log("[wompi-webhook] signature ok:", signatureOk);
   // TODO: re-enable after confirming signature algorithm
   // if (!signatureOk) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
 
