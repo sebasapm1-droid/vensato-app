@@ -13,16 +13,21 @@ function addDays(days: number): string {
   return d.toISOString();
 }
 
-// Wompi signature: SHA256 of specific transaction fields + events_secret (no HMAC)
-function verifyWompiSignature(transaction: any, checksum: string, secret: string): boolean {
-  const str =
-    String(transaction.id) +
-    String(transaction.nonce ?? "") +
-    String(transaction.created_at ?? "") +
-    String(transaction.amount_in_cents ?? "") +
-    String(transaction.currency ?? "") +
-    String(transaction.status ?? "") +
-    secret;
+// Wompi signature: SHA256 of event.signature.properties values + events_secret (no HMAC)
+// Properties and order are listed dynamically in event.signature.properties
+function verifyWompiSignature(event: any, secret: string): boolean {
+  const { checksum, properties } = event?.signature ?? {};
+  if (!checksum || !Array.isArray(properties)) return false;
+
+  const transaction = event?.data?.transaction ?? {};
+  const str = properties
+    .map((path: string) => {
+      // path format: "transaction.field"
+      const field = path.split(".").slice(1).join(".");
+      return String(transaction[field] ?? "");
+    })
+    .join("") + secret;
+
   const expected = createHash("sha256").update(str).digest("hex");
   return expected === checksum;
 }
@@ -43,14 +48,12 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 1. Verify signature ────────────────────────────────────────────────────
-  const wompiSignature = req.headers.get("x-event-checksum") ?? "";
   const secret = process.env.WOMPI_EVENTS_SECRET ?? "";
-
-  const signatureOk = verifyWompiSignature(transaction, wompiSignature, secret);
-  console.log("[wompi-webhook] event.signature:", JSON.stringify(event.signature));
-  console.log("[wompi-webhook] signature ok:", signatureOk);
-  // TODO: re-enable after confirming signature algorithm
-  // if (!signatureOk) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  const signatureOk = verifyWompiSignature(event, secret);
+  if (!signatureOk) {
+    console.warn("[wompi-webhook] Invalid signature");
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
 
   if (transaction.status !== "APPROVED") {
     return NextResponse.json({ ok: true });
@@ -58,20 +61,17 @@ export async function POST(req: NextRequest) {
 
   // ── 2. Look up checkout session ────────────────────────────────────────────
   const linkId: string = transaction.payment_link_id ?? "";
-  console.log("[wompi-webhook] payment_link_id:", linkId, "status:", transaction.status);
   if (!linkId) {
     console.warn("[wompi-webhook] No payment_link_id");
     return NextResponse.json({ ok: true });
   }
 
-  const { data: session, error: sessionErr } = await supabaseAdmin
+  const { data: session } = await supabaseAdmin
     .from("checkout_sessions")
     .select("id, user_id, tier")
     .eq("payment_link_id", linkId)
     .eq("status", "pending")
     .maybeSingle();
-
-  console.log("[wompi-webhook] session found:", session, "error:", sessionErr);
 
   if (!session) {
     console.warn("[wompi-webhook] No checkout session for link:", linkId);
