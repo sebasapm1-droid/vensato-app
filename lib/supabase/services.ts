@@ -75,6 +75,12 @@ export async function createTenant(tenant: Record<string, any>) {
   return data;
 }
 
+export async function updateTenant(id: string, data: Record<string, any>) {
+  const sb = createClient();
+  const { error } = await sb.from("tenants").update(data).eq("id", id);
+  if (error) throw error;
+}
+
 export async function deleteTenant(id: string) {
   const sb = createClient();
   const { error } = await sb.from("tenants").delete().eq("id", id);

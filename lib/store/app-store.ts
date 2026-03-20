@@ -67,6 +67,7 @@ interface AppStore {
     initialCharge?: Omit<Charge, "id"> | null,
     contractData?: { startDate: string; contractMonths: number }
   ) => Promise<Tenant>;
+  updateTenant: (id: string, data: Partial<Pick<Tenant, "fullName" | "cedula" | "email" | "phone" | "propertyId" | "property">>) => Promise<void>;
   deleteTenant: (id: string) => Promise<void>;
   addTenantDocument: (tenantId: string, docKey: string) => void;
   removeTenantDocument: (tenantId: string, docKey: string, docId?: string) => Promise<void>;
@@ -236,6 +237,24 @@ export const useAppStore = create<AppStore>((set, get) => ({
         : s.properties,
     }));
     return tenant;
+  },
+
+  updateTenant: async (id, data) => {
+    const dbData: Record<string, any> = {};
+    if (data.fullName !== undefined) dbData.full_name = data.fullName;
+    if (data.cedula !== undefined) dbData.cedula = data.cedula;
+    if (data.email !== undefined) dbData.email = data.email;
+    if (data.phone !== undefined) dbData.phone = data.phone;
+    if (data.propertyId !== undefined) dbData.property_id = data.propertyId || null;
+    await svc.updateTenant(id, dbData);
+    set(s => ({
+      tenants: s.tenants.map(t => t.id !== id ? t : {
+        ...t, ...data,
+        property: data.propertyId
+          ? (s.properties.find(p => p.id === data.propertyId)?.alias ?? t.property)
+          : data.propertyId === "" ? "Sin asignar" : t.property,
+      }),
+    }));
   },
 
   deleteTenant: async (id) => {

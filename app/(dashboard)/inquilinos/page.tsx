@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { UserPlus, MoreHorizontal, Mail, Phone, X, Trash2, Upload, FileText, Loader2 } from "lucide-react";
+import { UserPlus, MoreHorizontal, Mail, Phone, X, Trash2, Upload, FileText, Loader2, Pencil } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { useDocumentos, type Documento } from "@/hooks/useDocumentos";
@@ -21,9 +21,12 @@ const DOC_TYPES = [
 ];
 
 export default function InquilinosPage() {
-  const { tenants, addTenant, deleteTenant, properties } = useAppStore();
+  const { tenants, addTenant, updateTenant, deleteTenant, properties } = useAppStore();
   const { subirDocumento, eliminarDocumento, loading: docLoading } = useDocumentos();
   const [showModal, setShowModal] = useState(false);
+  const [editTenant, setEditTenant] = useState<typeof tenants[0] | null>(null);
+  const [editForm, setEditForm] = useState({ fullName: "", cedula: "", email: "", phone: "", propertyId: "" });
+  const [editSaving, setEditSaving] = useState(false);
   const [docsTenant, setDocsTenant] = useState<typeof tenants[0] | null>(null);
   const [form, setForm] = useState({ fullName: "", cedula: "", email: "", phone: "", propertyId: "", dueDay: "5", startDate: "", contractMonths: "12" });
   const [saving, setSaving] = useState(false);
@@ -72,6 +75,31 @@ export default function InquilinosPage() {
       toast.success("Documento eliminado.");
     } catch {
       toast.error("No se pudo eliminar el documento.");
+    }
+  }
+
+  function openEdit(t: typeof tenants[0]) {
+    setEditTenant(t);
+    setEditForm({ fullName: t.fullName, cedula: t.cedula, email: t.email, phone: t.phone, propertyId: t.propertyId });
+  }
+
+  async function handleEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editTenant || !editForm.fullName || !editForm.email) { toast.error("Nombre y correo son obligatorios."); return; }
+    setEditSaving(true);
+    try {
+      await updateTenant(editTenant.id, {
+        fullName: editForm.fullName, cedula: editForm.cedula,
+        email: editForm.email, phone: editForm.phone,
+        propertyId: editForm.propertyId,
+        property: properties.find(p => p.id === editForm.propertyId)?.alias ?? "Sin asignar",
+      });
+      toast.success("Inquilino actualizado.");
+      setEditTenant(null);
+    } catch {
+      toast.error("Error al actualizar el inquilino.");
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -220,6 +248,56 @@ export default function InquilinosPage() {
         </div>
       )}
 
+      {/* Edit Modal */}
+      {editTenant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-vensato-surface rounded-2xl p-8 w-full max-w-md shadow-2xl border border-vensato-border-subtle max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-heading font-bold text-xl text-vensato-text-main">Editar Inquilino</h3>
+              <button onClick={() => setEditTenant(null)}><X className="h-5 w-5 text-vensato-text-secondary" /></button>
+            </div>
+            <form onSubmit={handleEdit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-vensato-text-main">Nombre Completo *</label>
+                <Input value={editForm.fullName} onChange={e => setEditForm(f => ({ ...f, fullName: e.target.value }))}
+                  className="bg-vensato-base border-vensato-border-subtle h-10" required />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-vensato-text-main">Cédula / NIT</label>
+                <Input value={editForm.cedula} onChange={e => setEditForm(f => ({ ...f, cedula: e.target.value }))}
+                  className="bg-vensato-base border-vensato-border-subtle h-10" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-vensato-text-main">Correo Electrónico *</label>
+                <Input type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                  className="bg-vensato-base border-vensato-border-subtle h-10" required />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-vensato-text-main">Teléfono / WhatsApp</label>
+                <Input value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))}
+                  placeholder="+57 300 000 0000" className="bg-vensato-base border-vensato-border-subtle h-10" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-vensato-text-main">Propiedad asignada</label>
+                <select value={editForm.propertyId} onChange={e => setEditForm(f => ({ ...f, propertyId: e.target.value }))}
+                  className="w-full h-10 rounded-md border border-vensato-border-subtle bg-vensato-base px-3 text-sm focus:outline-none focus:ring-2 focus:ring-vensato-brand-primary">
+                  <option value="">— Sin asignar —</option>
+                  {properties.map(p => (
+                    <option key={p.id} value={p.id}>{p.alias} {p.status === "occupied" ? "(Ocupada)" : "(Vacante)"}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex space-x-3 pt-2">
+                <Button type="button" variant="outline" onClick={() => setEditTenant(null)} className="flex-1 border-vensato-border-subtle">Cancelar</Button>
+                <Button type="submit" disabled={editSaving} className="flex-1 bg-vensato-brand-primary hover:bg-[#5C7D6E] text-white">
+                  {editSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Guardando…</> : "Guardar cambios"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Documents Modal */}
       {docsTenant && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
@@ -325,6 +403,9 @@ export default function InquilinosPage() {
                       <MoreHorizontal className="h-4 w-4" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent side="bottom" align="end" className="min-w-[180px]">
+                      <DropdownMenuItem onClick={() => openEdit(t)}>
+                        <Pencil className="h-4 w-4" /> Editar inquilino
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleOpenDocsModal(t)}>
                         <Upload className="h-4 w-4" /> Gestionar docs
                       </DropdownMenuItem>
