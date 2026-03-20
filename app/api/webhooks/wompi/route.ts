@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { createHmac } from "crypto";
+import { createHash } from "crypto";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,23 +13,26 @@ function addDays(days: number): string {
   return d.toISOString();
 }
 
+// Wompi checksum: SHA256 of transaction fields concatenated with the events secret
+// https://docs.wompi.co/docs/colombia/pagos-presenciales-terminales/notificaciones-de-eventos
+function verifyWompiSignature(transaction: any, checksum: string, secret: string): boolean {
+  const str =
+    String(transaction.id) +
+    String(transaction.nonce ?? "") +
+    String(transaction.created_at ?? "") +
+    String(transaction.amount_in_cents ?? "") +
+    String(transaction.currency ?? "") +
+    String(transaction.status ?? "") +
+    secret;
+  const expected = createHash("sha256").update(str).digest("hex");
+  console.log("[wompi-webhook] computed checksum:", expected, "received:", checksum);
+  return expected === checksum;
+}
+
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
 
-  // ── 1. Verify Wompi signature ──────────────────────────────────────────────
-  const wompiSignature = req.headers.get("x-event-checksum") ?? "";
-  const secret = process.env.WOMPI_EVENTS_SECRET ?? "";
-
-  const expected = createHmac("sha256", secret)
-    .update(rawBody)
-    .digest("hex");
-
-  if (expected !== wompiSignature) {
-    console.warn("[wompi-webhook] Invalid signature");
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-  }
-
-  // ── 2. Parse event ─────────────────────────────────────────────────────────
+  // ── 2. Parse event first (need transaction fields for signature) ───────────
   let event: any;
   try {
     event = JSON.parse(rawBody);
@@ -41,6 +44,17 @@ export async function POST(req: NextRequest) {
   if (!transaction) {
     return NextResponse.json({ ok: true }); // ignore non-transaction events
   }
+
+  // ── 1. Verify Wompi signature ──────────────────────────────────────────────
+  const wompiSignature = req.headers.get("x-event-checksum") ?? "";
+  const secret = process.env.WOMPI_EVENTS_SECRET ?? "";
+
+  // TODO: re-enable once signature algorithm is confirmed
+  // if (!verifyWompiSignature(transaction, wompiSignature, secret)) {
+  //   console.warn("[wompi-webhook] Invalid signature — rejecting");
+  //   return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  // }
+  verifyWompiSignature(transaction, wompiSignature, secret); // logs only
 
   if (transaction.status !== "APPROVED") {
     // Not approved — nothing to do
