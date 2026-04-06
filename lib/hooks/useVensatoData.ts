@@ -16,6 +16,21 @@ import {
 const REFRESH_EVENT = "vensato-data-refresh";
 
 function dbPropertyToStore(p: any) {
+  const additionalContacts = Array.isArray(p.additional_contacts)
+    ? p.additional_contacts
+        .filter((contact: unknown) => typeof contact === "object" && contact !== null)
+        .map((contact: Record<string, unknown>, index: number) => ({
+          id:
+            typeof contact.id === "string" && contact.id
+              ? contact.id
+              : `contact-${p.id}-${index}`,
+          label: typeof contact.label === "string" ? contact.label : "",
+          name: typeof contact.name === "string" ? contact.name : "",
+          phone: typeof contact.phone === "string" ? contact.phone : "",
+          email: typeof contact.email === "string" ? contact.email : "",
+        }))
+    : [];
+
   return {
     id: p.id,
     alias: p.alias,
@@ -34,6 +49,7 @@ function dbPropertyToStore(p: any) {
     notes: p.notes ?? "",
     status: p.status ?? "vacant",
     tenant: null,
+    additionalContacts,
     capRate:
       p.commercial_value && p.current_rent
         ? Number(

@@ -18,6 +18,15 @@ export type AgentMutationMemory = {
   nombre?: string;
 };
 
+export type PendingMutation = {
+  tabla: "tenants" | "properties" | "contracts";
+  id: string;
+  campo: string;
+  valor: string;
+  valorAnterior: string;
+  nombre?: string;
+};
+
 type PropertyListRow = {
   id: string;
   alias: string;
@@ -80,6 +89,15 @@ type PropertyDetailRow = {
   address: string | null;
   city: string | null;
   current_rent: number | null;
+  additional_contacts:
+    | Array<{
+        id?: string;
+        label?: string;
+        name?: string;
+        phone?: string;
+        email?: string;
+      }>
+    | null;
 };
 
 type TenantPropertyRow = {
@@ -231,6 +249,17 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: "listar_inquilinos_propiedad",
     description: "Lista inquilinos de una propiedad.",
+    input_schema: {
+      type: "object",
+      properties: {
+        property_id: { type: "string" },
+      },
+      required: ["property_id"],
+    },
+  },
+  {
+    name: "obtener_contactos_propiedad",
+    description: "Obtiene contactos de una propiedad.",
     input_schema: {
       type: "object",
       properties: {
@@ -567,6 +596,53 @@ async function listarInquilinosPropiedad(
   };
 }
 
+async function obtenerContactosPropiedad(
+  input: ToolInput,
+  userId: string
+): Promise<unknown> {
+  const propertyId = asString(input.property_id);
+
+  if (!propertyId) {
+    return { error: "Parametros invalidos" };
+  }
+
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("properties")
+    .select("id, alias, city, additional_contacts")
+    .eq("id", propertyId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) return { error: error.message };
+  if (!data) return { error: "No encontrado" };
+
+  const row = data as Pick<PropertyDetailRow, "id" | "alias" | "city" | "additional_contacts">;
+  const contactos = (row.additional_contacts ?? [])
+    .slice(0, MAX_ROWS)
+    .map((contact, index) => ({
+      id:
+        typeof contact?.id === "string" && contact.id
+          ? contact.id
+          : `contact-${row.id}-${index}`,
+      tipo: typeof contact?.label === "string" ? contact.label : "",
+      nombre: typeof contact?.name === "string" ? contact.name : "",
+      telefono: typeof contact?.phone === "string" ? contact.phone : "",
+      correo: typeof contact?.email === "string" ? contact.email : "",
+    }))
+    .filter(
+      (contact) =>
+        contact.tipo || contact.nombre || contact.telefono || contact.correo
+    );
+
+  return {
+    property_id: row.id,
+    propiedad: row.alias,
+    ciudad: row.city,
+    contactos,
+  };
+}
+
 async function obtenerContratoActivo(
   input: ToolInput,
   userId: string
@@ -696,7 +772,21 @@ async function resumenPropiedad(input: ToolInput, userId: string): Promise<unkno
   };
 }
 
-async function actualizarCampo(input: ToolInput, userId: string): Promise<unknown> {
+export async function prepareUpdateCampo(
+  input: ToolInput,
+  userId: string
+): Promise<
+  | { error: string }
+  | {
+      tabla: "tenants" | "properties" | "contracts";
+      id: string;
+      dbField: string;
+      campo: string;
+      valor: string;
+      valorAnterior: string;
+      nombreRegistro: string;
+    }
+> {
   const tabla = asString(input.tabla) as keyof typeof UPDATE_FIELD_MAP | null;
   const id = asString(input.id);
   const campo = asString(input.campo);
@@ -743,6 +833,39 @@ async function actualizarCampo(input: ToolInput, userId: string): Promise<unknow
   if (currentError) return { error: currentError.message };
   if (!currentRow) return { error: "No autorizado" };
 
+  const valorAnterior =
+    currentRow &&
+    typeof currentRow === "object" &&
+    dbField in currentRow
+      ? String((currentRow as Record<string, unknown>)[dbField] ?? "")
+      : "";
+
+  const nombreRegistro =
+    tabla === "tenants"
+      ? String((currentRow as Record<string, unknown> | null)?.full_name ?? "")
+      : tabla === "properties"
+        ? String((currentRow as Record<string, unknown> | null)?.alias ?? "")
+        : "";
+
+  return {
+    tabla,
+    id,
+    dbField,
+    campo: normalizedField,
+    valor,
+    valorAnterior,
+    nombreRegistro,
+  };
+}
+
+async function actualizarCampo(input: ToolInput, userId: string): Promise<unknown> {
+  const prepared = await prepareUpdateCampo(input, userId);
+  if ("error" in prepared) {
+    return prepared;
+  }
+
+  const { tabla, id, dbField, campo, valor, valorAnterior, nombreRegistro } = prepared;
+  const supabase = createServiceClient();
   const payload: Record<string, string> = { [dbField]: valor };
   const { data: updatedRow, error: updateError } = await supabase
     .from(tabla)
@@ -765,25 +888,11 @@ async function actualizarCampo(input: ToolInput, userId: string): Promise<unknow
     return { error: "No se pudo confirmar el cambio" };
   }
 
-  const valorAnterior =
-    currentRow &&
-    typeof currentRow === "object" &&
-    dbField in currentRow
-      ? String((currentRow as Record<string, unknown>)[dbField] ?? "")
-      : "";
-
-  const nombreRegistro =
-    tabla === "tenants"
-      ? String((currentRow as Record<string, unknown> | null)?.full_name ?? "")
-      : tabla === "properties"
-        ? String((currentRow as Record<string, unknown> | null)?.alias ?? "")
-        : "";
-
   return {
     ok: true,
     tabla,
     id,
-    campo: normalizedField,
+    campo,
     valor,
     valor_anterior: valorAnterior,
     nombre: nombreRegistro || undefined,
@@ -960,6 +1069,8 @@ export async function executeTool(
       return obtenerPropiedadInquilino(input, userId);
     case "listar_inquilinos_propiedad":
       return listarInquilinosPropiedad(input, userId);
+    case "obtener_contactos_propiedad":
+      return obtenerContactosPropiedad(input, userId);
     case "obtener_contrato_activo":
       return obtenerContratoActivo(input, userId);
     case "resumen_propiedad":

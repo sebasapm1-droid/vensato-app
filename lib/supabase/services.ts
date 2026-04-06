@@ -19,6 +19,13 @@ type PropertyRow = {
   current_rent: number | null;
   admin_fee: number | null;
   predial_annual: number | null;
+  additional_contacts: Array<{
+    id?: string;
+    label?: string;
+    name?: string;
+    phone?: string;
+    email?: string;
+  }> | null;
   notes: string | null;
   status: string | null;
 };
@@ -101,7 +108,7 @@ export async function upsertProfile(profile: {
 export async function getProperties() {
   const sb = createClient();
   const { data, error } = await sb.from("properties")
-    .select("id,alias,type,city,neighborhood,address,area_m2,bedrooms,bathrooms,estrato,commercial_value,current_rent,admin_fee,predial_annual,notes,status")
+    .select("id,alias,type,city,neighborhood,address,area_m2,bedrooms,bathrooms,estrato,commercial_value,current_rent,admin_fee,predial_annual,additional_contacts,notes,status")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as PropertyRow[];

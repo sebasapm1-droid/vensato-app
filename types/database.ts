@@ -54,6 +54,7 @@ export interface Database {
           current_rent: number | null;
           admin_fee: number | null;
           predial_annual: number | null;
+          additional_contacts: Json | null;
           status: string | null;
           notes: string | null;
           created_at: string | null;
@@ -143,6 +144,24 @@ export interface Database {
         };
         Insert: Partial<Database["public"]["Tables"]["charge_email_deliveries"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["charge_email_deliveries"]["Row"]>;
+        Relationships: [];
+      };
+      agent_usage_events: {
+        Row: {
+          id: string;
+          user_id: string;
+          message_count: number;
+          tool_calls_count: number;
+          input_tokens: number;
+          output_tokens: number;
+          estimated_cost_usd: number;
+          model: string;
+          stop_reason: string | null;
+          had_error: boolean;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["agent_usage_events"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["agent_usage_events"]["Row"]>;
         Relationships: [];
       };
       expenses: {

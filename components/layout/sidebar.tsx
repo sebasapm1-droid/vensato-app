@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Building2, Users, Wallet,
-  FileText, FolderOpen, PieChart, Settings, LogOut, Zap,
+  FileText, FolderOpen, PieChart, Settings, LogOut, Zap, Sparkles,
 } from "lucide-react";
 import { logout } from "@/app/actions/auth";
 import { toast } from "sonner";
@@ -19,7 +19,7 @@ const TIER_LABELS: Record<string, string> = {
   patrimonio: "Plan Patrimonio",
 };
 
-export function Sidebar() {
+export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const router = useRouter();
   const { charges, userConfig } = useAppStore();
   const { tier } = usePlan();
@@ -62,6 +62,9 @@ export function Sidebar() {
         <SidebarLink href="/contratos" icon={<FileText size={20} />} label="Contratos" />
         <SidebarLink href="/documentos" icon={<FolderOpen size={20} />} label="Documentos" />
         <SidebarLink href="/reportes" icon={<PieChart size={20} />} label="Reportes" />
+        {isAdmin ? (
+          <SidebarLink href="/ia" icon={<Sparkles size={20} />} label="IA" />
+        ) : null}
       </nav>
 
       <div className="p-4 border-t border-vensato-border-subtle space-y-1">

@@ -7,6 +7,8 @@ import {
   executeTool,
   type AgentEntityMemory,
   type AgentMutationMemory,
+  type PendingMutation,
+  prepareUpdateCampo,
 } from "@/app/api/agent/tools";
 
 type ChatMessage = {
@@ -21,13 +23,18 @@ type ToolExecution = {
 
 type AgentMemory = {
   activeEntity?: AgentEntityMemory | null;
+  activeTenant?: AgentEntityMemory | null;
   activeProperty?: AgentEntityMemory | null;
+  activeContract?: AgentEntityMemory | null;
   lastMutation?: AgentMutationMemory | null;
+  pendingMutation?: PendingMutation | null;
 };
 
 const MODEL = "claude-haiku-4-5-20251001";
 const MAX_TOKENS = 400;
 const MAX_HISTORY = 6;
+const INPUT_COST_PER_MILLION_USD = 1;
+const OUTPUT_COST_PER_MILLION_USD = 5;
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -40,6 +47,7 @@ Antes de modificar datos, confirma brevemente y luego haz el cambio en el mismo 
 Si necesitas identificar un registro, usa herramientas. Nunca pidas IDs al usuario.
 Si preguntan por inquilinos, no respondas con propiedades. Si preguntan por ingresos, usa herramientas de ingresos.
 Si preguntan por la propiedad de un inquilino, sigue la relacion del inquilino hacia su propiedad.
+Si el usuario pide cambiar un inquilino, nunca cambies una propiedad. Si pide cambiar una propiedad, nunca cambies un inquilino.
 Respuestas cortas. Nunca inventes datos. Si no encuentras algo, dilo.
 `.trim();
 
@@ -110,6 +118,146 @@ function shouldUseActiveEntity(text: string): boolean {
   );
 }
 
+function mentionsTenant(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes("inquilin") ||
+    normalized.includes("arrendatari") ||
+    normalized.includes("tenant")
+  );
+}
+
+function mentionsProperty(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes("propiedad") ||
+    normalized.includes("inmueble") ||
+    normalized.includes("apartamento") ||
+    normalized.includes("casa") ||
+    normalized.includes("local") ||
+    normalized.includes("porteria") ||
+    normalized.includes("portería") ||
+    normalized.includes("administracion") ||
+    normalized.includes("administración") ||
+    normalized.includes("mantenimiento")
+  );
+}
+
+function mentionsContract(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return normalized.includes("contrato");
+}
+
+function asksPersonalAttribute(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes("apellido") ||
+    normalized.includes("cedula") ||
+    normalized.includes("celular") ||
+    normalized.includes("telefono") ||
+    normalized.includes("correo") ||
+    normalized.includes("email") ||
+    normalized.includes("nombre de ella") ||
+    normalized.includes("nombre de el")
+  );
+}
+
+function asksPropertyAttribute(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes("direccion") ||
+    normalized.includes("ciudad") ||
+    normalized.includes("canon") ||
+    normalized.includes("arriendo") ||
+    normalized.includes("contacto") ||
+    normalized.includes("correo de") ||
+    normalized.includes("telefono de") ||
+    normalized.includes("teléfono de") ||
+    normalized.includes("porteria") ||
+    normalized.includes("portería") ||
+    normalized.includes("administracion") ||
+    normalized.includes("administración") ||
+    normalized.includes("mantenimiento")
+  );
+}
+
+function resolvePreferredEntity(
+  text: string,
+  memory: AgentMemory
+): AgentEntityMemory | null {
+  if (mentionsTenant(text) && memory.activeTenant) {
+    return memory.activeTenant;
+  }
+
+  if (mentionsProperty(text) && memory.activeProperty) {
+    return memory.activeProperty;
+  }
+
+  if (mentionsContract(text) && memory.activeContract) {
+    return memory.activeContract;
+  }
+
+  if (asksPersonalAttribute(text) && memory.activeTenant) {
+    return memory.activeTenant;
+  }
+
+  if (asksPropertyAttribute(text) && memory.activeProperty) {
+    return memory.activeProperty;
+  }
+
+  return memory.activeEntity ?? memory.activeTenant ?? memory.activeProperty ?? memory.activeContract ?? null;
+}
+
+function formatPendingMutationMessage(pendingMutation: PendingMutation): string {
+  const entidad =
+    pendingMutation.tabla === "tenants"
+      ? `inquilino ${pendingMutation.nombre ?? ""}`.trim()
+      : pendingMutation.tabla === "properties"
+        ? `propiedad ${pendingMutation.nombre ?? ""}`.trim()
+        : `contrato ${pendingMutation.nombre ?? pendingMutation.id.slice(0, 8)}`.trim();
+
+  return `Voy a cambiar ${pendingMutation.campo} de ${entidad} de "${pendingMutation.valorAnterior}" a "${pendingMutation.valor}". ¿Confirmas?`;
+}
+
+function estimateAgentCostUsd(inputTokens: number, outputTokens: number): number {
+  const inputCost = (inputTokens / 1_000_000) * INPUT_COST_PER_MILLION_USD;
+  const outputCost = (outputTokens / 1_000_000) * OUTPUT_COST_PER_MILLION_USD;
+  return Number((inputCost + outputCost).toFixed(6));
+}
+
+async function logAgentUsage(params: {
+  userId: string;
+  messageCount: number;
+  toolCallsCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  model: string;
+  stopReason: string | null;
+  hadError: boolean;
+}) {
+  try {
+    const { createServiceClient } = await import("@/lib/supabase/server");
+    const supabase = createServiceClient();
+
+    await supabase.from("agent_usage_events").insert({
+      user_id: params.userId,
+      message_count: params.messageCount,
+      tool_calls_count: params.toolCallsCount,
+      input_tokens: params.inputTokens,
+      output_tokens: params.outputTokens,
+      estimated_cost_usd: estimateAgentCostUsd(
+        params.inputTokens,
+        params.outputTokens
+      ),
+      model: params.model,
+      stop_reason: params.stopReason,
+      had_error: params.hadError,
+    });
+  } catch (error) {
+    console.error("[agent] Failed to log usage:", error);
+  }
+}
+
 function shouldRevertLastChange(text: string): boolean {
   const normalized = text.toLowerCase();
   return (
@@ -121,21 +269,49 @@ function shouldRevertLastChange(text: string): boolean {
   );
 }
 
+function shouldConfirmPendingChange(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return [
+    "si",
+    "sí",
+    "confirmo",
+    "confirma",
+    "hazlo",
+    "dale",
+    "ok",
+    "okay",
+    "de una",
+  ].includes(normalized);
+}
+
+function shouldCancelPendingChange(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes("cancel") ||
+    normalized.includes("mejor no") ||
+    normalized.includes("no lo hagas") ||
+    normalized.includes("olvidalo") ||
+    normalized.includes("olvídalo")
+  );
+}
+
 function buildMemoryNote(memory: AgentMemory, latestUserText: string): string | null {
   if (shouldRevertLastChange(latestUserText) && memory.lastMutation) {
     const mutation = memory.lastMutation;
     return `Contexto de sesion: ultimo cambio en ${mutation.tabla} id ${mutation.id}. Campo ${mutation.campo}. Valor anterior "${mutation.valorAnterior}". Valor nuevo "${mutation.valorNuevo}".`;
   }
 
-  if (shouldUseActiveEntity(latestUserText) && memory.activeEntity) {
-    const entity = memory.activeEntity;
-    const relatedProperty =
-      memory.activeProperty &&
-      memory.activeProperty.tabla === "properties" &&
-      memory.activeProperty.id
-        ? ` Propiedad relacionada id ${memory.activeProperty.id} nombre "${memory.activeProperty.nombre}".`
+  const preferredEntity = resolvePreferredEntity(latestUserText, memory);
+  if (shouldUseActiveEntity(latestUserText) && preferredEntity) {
+    const tenantNote =
+      memory.activeTenant?.id && memory.activeTenant.id !== preferredEntity.id
+        ? ` Inquilino activo id ${memory.activeTenant.id} nombre "${memory.activeTenant.nombre}".`
         : "";
-    return `Contexto de sesion: entidad activa ${entity.tabla} id ${entity.id} nombre "${entity.nombre}".${relatedProperty} Si piden un dato de esa entidad, usa obtener_detalle_entidad. Si piden la propiedad de un inquilino, usa obtener_propiedad_inquilino. Si piden cambiar algo, usa actualizar_campo con esa entidad.`;
+    const propertyNote =
+      memory.activeProperty?.id
+        ? ` Propiedad activa id ${memory.activeProperty.id} nombre "${memory.activeProperty.nombre}".`
+        : "";
+    return `Contexto de sesion: entidad preferida ${preferredEntity.tabla} id ${preferredEntity.id} nombre "${preferredEntity.nombre}".${tenantNote}${propertyNote} Si el usuario menciona inquilino o pide datos personales, usa tenants. Si menciona propiedad o inmueble, usa properties. Nunca cambies una propiedad cuando pidan cambiar un inquilino.`;
   }
 
   return null;
@@ -150,9 +326,72 @@ function formatCurrency(value: unknown): string {
   }).format(Number.isFinite(amount) ? amount : 0);
 }
 
+function asksOnlyPhone(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return (
+    (normalized.includes("celular") ||
+      normalized.includes("telefono") ||
+      normalized.includes("teléfono") ||
+      normalized.includes("numero") ||
+      normalized.includes("número")) &&
+    !normalized.includes("correo") &&
+    !normalized.includes("email") &&
+    !normalized.includes("cedula") &&
+    !normalized.includes("cédula")
+  );
+}
+
+function asksOnlyEmail(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return (
+    (normalized.includes("correo") || normalized.includes("email")) &&
+    !normalized.includes("telefono") &&
+    !normalized.includes("teléfono") &&
+    !normalized.includes("celular") &&
+    !normalized.includes("cedula") &&
+    !normalized.includes("cédula")
+  );
+}
+
+function asksOnlyCedula(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return normalized.includes("cedula") || normalized.includes("cédula");
+}
+
+function asksOnlyAddress(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return normalized.includes("direccion") || normalized.includes("dirección");
+}
+
+function asksOnlyCity(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return normalized.includes("ciudad");
+}
+
+function findRequestedContactKeyword(text: string): string | null {
+  const normalized = text.toLowerCase();
+  const keywords = [
+    "administracion",
+    "administración",
+    "porteria",
+    "portería",
+    "mantenimiento",
+    "vigilancia",
+    "recepcion",
+    "recepción",
+  ];
+
+  return keywords.find((keyword) => normalized.includes(keyword)) ?? null;
+}
+
+function normalizeForMatch(text: string): string {
+  return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 function formatDirectToolResponse(
   toolName: string,
-  toolResult: unknown
+  toolResult: unknown,
+  latestUserText: string
 ): string | null {
   if (
     typeof toolResult === "object" &&
@@ -230,6 +469,24 @@ function formatDirectToolResponse(
     }
 
     if (result.tabla === "tenants") {
+      if (asksOnlyCedula(latestUserText)) {
+        return typeof result.cedula === "string" && result.cedula
+          ? `Cédula de ${typeof result.nombre === "string" ? result.nombre : "ese inquilino"}: ${result.cedula}`
+          : "No tengo ese dato registrado en el sistema.";
+      }
+
+      if (asksOnlyPhone(latestUserText)) {
+        return typeof result.telefono === "string" && result.telefono
+          ? `Celular de ${typeof result.nombre === "string" ? result.nombre : "ese inquilino"}: ${result.telefono}`
+          : "No tengo ese dato registrado en el sistema.";
+      }
+
+      if (asksOnlyEmail(latestUserText)) {
+        return typeof result.email === "string" && result.email
+          ? `Correo de ${typeof result.nombre === "string" ? result.nombre : "ese inquilino"}: ${result.email}`
+          : "No tengo ese dato registrado en el sistema.";
+      }
+
       const parts: string[] = [];
       if (typeof result.nombre === "string" && result.nombre) {
         parts.push(`Nombre: ${result.nombre}`);
@@ -250,6 +507,18 @@ function formatDirectToolResponse(
     }
 
     if (result.tabla === "properties") {
+      if (asksOnlyAddress(latestUserText)) {
+        return typeof result.direccion === "string" && result.direccion
+          ? `Dirección de ${typeof result.nombre === "string" ? result.nombre : "esa propiedad"}: ${result.direccion}`
+          : "No tengo esa dirección registrada.";
+      }
+
+      if (asksOnlyCity(latestUserText)) {
+        return typeof result.ciudad === "string" && result.ciudad
+          ? `Ciudad de ${typeof result.nombre === "string" ? result.nombre : "esa propiedad"}: ${result.ciudad}`
+          : "No tengo esa ciudad registrada.";
+      }
+
       const parts: string[] = [];
       if (typeof result.nombre === "string" && result.nombre) {
         parts.push(`Propiedad: ${result.nombre}`);
@@ -330,6 +599,78 @@ function formatDirectToolResponse(
     );
 
     return `${propiedad} tiene ${inquilinos.length} ${inquilinos.length === 1 ? "inquilino" : "inquilinos"}:\n- ${nombres.join("\n- ")}`;
+  }
+
+  if (toolName === "obtener_contactos_propiedad") {
+    const result =
+      typeof toolResult === "object" && toolResult !== null
+        ? (toolResult as Record<string, unknown>)
+        : null;
+
+    if (!result) {
+      return null;
+    }
+
+    if (typeof result.error === "string") {
+      return result.error;
+    }
+
+    const contactos = asObjectArray(result.contactos) ?? [];
+    const propiedad =
+      typeof result.propiedad === "string" ? result.propiedad : "esta propiedad";
+
+    if (contactos.length === 0) {
+      return `${propiedad} no tiene contactos adicionales registrados.`;
+    }
+
+    const requestedKeyword = findRequestedContactKeyword(latestUserText);
+    const filteredContacts = requestedKeyword
+      ? contactos.filter((contacto) => {
+          const tipo =
+            typeof contacto.tipo === "string" ? normalizeForMatch(contacto.tipo) : "";
+          const keyword = normalizeForMatch(requestedKeyword);
+          return tipo.includes(keyword);
+        })
+      : contactos;
+
+    const targetContacts = filteredContacts.length > 0 ? filteredContacts : contactos;
+
+    if (asksOnlyPhone(latestUserText) && targetContacts.length > 0) {
+      const contacto = targetContacts[0];
+      return typeof contacto.telefono === "string" && contacto.telefono
+        ? `Teléfono de ${typeof contacto.tipo === "string" && contacto.tipo ? contacto.tipo : "ese contacto"}: ${contacto.telefono}`
+        : "No tengo ese teléfono registrado.";
+    }
+
+    if (asksOnlyEmail(latestUserText) && targetContacts.length > 0) {
+      const contacto = targetContacts[0];
+      return typeof contacto.correo === "string" && contacto.correo
+        ? `Correo de ${typeof contacto.tipo === "string" && contacto.tipo ? contacto.tipo : "ese contacto"}: ${contacto.correo}`
+        : "No tengo ese correo registrado.";
+    }
+
+    const lines = targetContacts.map((contacto) => {
+      const tipo =
+        typeof contacto.tipo === "string" && contacto.tipo
+          ? contacto.tipo
+          : "Contacto";
+      const nombre =
+        typeof contacto.nombre === "string" && contacto.nombre
+          ? contacto.nombre
+          : "Sin nombre";
+      const telefono =
+        typeof contacto.telefono === "string" && contacto.telefono
+          ? ` · ${contacto.telefono}`
+          : "";
+      const correo =
+        typeof contacto.correo === "string" && contacto.correo
+          ? ` · ${contacto.correo}`
+          : "";
+
+      return `${tipo}: ${nombre}${telefono}${correo}`;
+    });
+
+    return `${propiedad} tiene ${targetContacts.length} ${targetContacts.length === 1 ? "contacto adicional" : "contactos adicionales"}:\n- ${lines.join("\n- ")}`;
   }
 
   if (toolName === "obtener_contrato_activo") {
@@ -479,10 +820,31 @@ function formatMutationToolResponse(toolResults: ToolExecution[]): string | null
     return result.error;
   }
 
+  if (result.pending_confirmation === true) {
+    const pendingMutation: PendingMutation = {
+      tabla: result.tabla as PendingMutation["tabla"],
+      id: String(result.id ?? ""),
+      campo: String(result.campo ?? ""),
+      valor: String(result.valor ?? ""),
+      valorAnterior: String(result.valor_anterior ?? ""),
+      nombre: typeof result.nombre === "string" ? result.nombre : undefined,
+    };
+
+    return formatPendingMutationMessage(pendingMutation);
+  }
+
   if (result.ok === true) {
     const campo = typeof result.campo === "string" ? result.campo : "campo";
     const valor = typeof result.valor === "string" ? result.valor : "";
-    return `Cambio aplicado. ${campo} actualizado a "${valor}".`;
+    const tabla = typeof result.tabla === "string" ? result.tabla : "registro";
+    const nombre = typeof result.nombre === "string" && result.nombre ? result.nombre : "registro";
+    const entidad =
+      tabla === "tenants"
+        ? `inquilino ${nombre}`
+        : tabla === "properties"
+          ? `propiedad ${nombre}`
+          : `contrato ${nombre}`;
+    return `Cambio aplicado en ${entidad}. ${campo} actualizado a "${valor}".`;
   }
 
   return null;
@@ -507,6 +869,11 @@ function deriveMemory(
           nextMemory = {
             ...nextMemory,
             activeEntity: {
+              tabla: "tenants",
+              id,
+              nombre,
+            },
+            activeTenant: {
               tabla: "tenants",
               id,
               nombre,
@@ -564,6 +931,14 @@ function deriveMemory(
               id,
               nombre,
             },
+            activeTenant:
+              tipo === "tenant"
+                ? {
+                    tabla: "tenants",
+                    id,
+                    nombre,
+                  }
+                : nextMemory.activeTenant,
             activeProperty:
               tipo === "property"
                 ? {
@@ -595,6 +970,14 @@ function deriveMemory(
             id,
             nombre,
           },
+          activeTenant:
+            tabla === "tenants"
+              ? {
+                  tabla: "tenants",
+                  id,
+                  nombre,
+                }
+              : nextMemory.activeTenant,
           activeProperty:
             tabla === "properties"
               ? {
@@ -632,6 +1015,11 @@ function deriveMemory(
             id: tenantId,
             nombre: tenantNombre,
           },
+          activeTenant: {
+            tabla: "tenants",
+            id: tenantId,
+            nombre: tenantNombre,
+          },
           activeProperty:
             propertyId && propertyNombre
               ? {
@@ -663,32 +1051,78 @@ function deriveMemory(
             id: propertyId,
             nombre: propertyName,
           },
+          activeEntity: {
+            tabla: "properties",
+            id: propertyId,
+            nombre: propertyName,
+          },
         };
       }
     }
 
     if (
-      toolUse.name === "actualizar_campo" &&
+      toolUse.name === "obtener_contrato_activo" &&
       typeof result === "object" &&
       result !== null &&
-      (result as Record<string, unknown>).ok === true
+      typeof (result as Record<string, unknown>).id === "string"
     ) {
       const data = result as Record<string, unknown>;
+      const contractId = String(data.id);
       nextMemory = {
-        activeEntity: nextMemory.activeEntity,
-        lastMutation: {
-          tabla: data.tabla as AgentMutationMemory["tabla"],
-          id: String(data.id ?? ""),
-          campo: String(data.campo ?? ""),
-          valorAnterior: String(data.valor_anterior ?? ""),
-          valorNuevo: String(data.valor ?? ""),
+        ...nextMemory,
+        activeContract: {
+          tabla: "contracts",
+          id: contractId,
           nombre:
-            typeof data.nombre === "string" && data.nombre
-              ? data.nombre
-              : nextMemory.activeEntity?.nombre,
+            typeof data.tenant_id === "string"
+              ? `Contrato ${contractId.slice(0, 8)}`
+              : `Contrato ${contractId.slice(0, 8)}`,
         },
-        activeProperty: nextMemory.activeProperty,
       };
+    }
+
+    if (
+      toolUse.name === "actualizar_campo" &&
+      typeof result === "object" &&
+      result !== null
+    ) {
+      const data = result as Record<string, unknown>;
+
+      if (data.pending_confirmation === true) {
+        nextMemory = {
+          ...nextMemory,
+          pendingMutation: {
+            tabla: data.tabla as PendingMutation["tabla"],
+            id: String(data.id ?? ""),
+            campo: String(data.campo ?? ""),
+            valorAnterior: String(data.valor_anterior ?? ""),
+            valor: String(data.valor ?? ""),
+            nombre:
+              typeof data.nombre === "string" && data.nombre
+                ? data.nombre
+                : nextMemory.activeEntity?.nombre,
+          },
+        };
+      } else if (data.ok === true) {
+        nextMemory = {
+          activeEntity: nextMemory.activeEntity,
+          activeTenant: nextMemory.activeTenant,
+          lastMutation: {
+            tabla: data.tabla as AgentMutationMemory["tabla"],
+            id: String(data.id ?? ""),
+            campo: String(data.campo ?? ""),
+            valorAnterior: String(data.valor_anterior ?? ""),
+            valorNuevo: String(data.valor ?? ""),
+            nombre:
+              typeof data.nombre === "string" && data.nombre
+                ? data.nombre
+                : nextMemory.activeEntity?.nombre,
+          },
+          activeProperty: nextMemory.activeProperty,
+          activeContract: nextMemory.activeContract,
+          pendingMutation: null,
+        };
+      }
     }
   }
 
@@ -697,31 +1131,57 @@ function deriveMemory(
 
 function patchToolInputWithMemory(
   toolUse: Anthropic.ToolUseBlock,
-  memory: AgentMemory
+  memory: AgentMemory,
+  latestUserText: string
 ): Record<string, unknown> {
   const input = { ...(toolUse.input as Record<string, unknown>) };
+  const preferredEntity = resolvePreferredEntity(latestUserText, memory);
+  const tenantIntent = mentionsTenant(latestUserText) || asksPersonalAttribute(latestUserText);
+  const propertyIntent = mentionsProperty(latestUserText) || asksPropertyAttribute(latestUserText);
+  const contractIntent = mentionsContract(latestUserText);
+
+  if (toolUse.name === "actualizar_campo" || toolUse.name === "obtener_detalle_entidad") {
+    if (tenantIntent && memory.activeTenant) {
+      input.id = memory.activeTenant.id;
+      input.tabla = "tenants";
+      return input;
+    }
+
+    if (propertyIntent && memory.activeProperty) {
+      input.id = memory.activeProperty.id;
+      input.tabla = "properties";
+      return input;
+    }
+
+    if (contractIntent && memory.activeContract) {
+      input.id = memory.activeContract.id;
+      input.tabla = "contracts";
+      return input;
+    }
+  }
 
   if (
     (toolUse.name === "actualizar_campo" ||
       toolUse.name === "obtener_detalle_entidad") &&
-    memory.activeEntity &&
+    preferredEntity &&
     (!isUuid(typeof input.id === "string" ? input.id : null) ||
-      (typeof input.tabla === "string" && input.tabla !== memory.activeEntity.tabla))
+      (typeof input.tabla === "string" && input.tabla !== preferredEntity.tabla))
   ) {
-    input.id = memory.activeEntity.id;
-    input.tabla = memory.activeEntity.tabla;
+    input.id = preferredEntity.id;
+    input.tabla = preferredEntity.tabla;
   }
 
   if (
     toolUse.name === "obtener_propiedad_inquilino" &&
-    memory.activeEntity?.tabla === "tenants" &&
+    memory.activeTenant &&
     !isUuid(typeof input.tenant_id === "string" ? input.tenant_id : null)
   ) {
-    input.tenant_id = memory.activeEntity.id;
+    input.tenant_id = memory.activeTenant.id;
   }
 
   if (
     (toolUse.name === "listar_inquilinos_propiedad" ||
+      toolUse.name === "obtener_contactos_propiedad" ||
       toolUse.name === "resumen_propiedad") &&
     memory.activeProperty &&
     !isUuid(typeof input.property_id === "string" ? input.property_id : null)
@@ -734,9 +1194,15 @@ function patchToolInputWithMemory(
     (!isUuid(typeof input.id === "string" ? input.id : null) ||
       typeof input.tabla !== "string")
   ) {
-    if (memory.activeEntity) {
-      input.id = memory.activeEntity.id;
-      input.tabla = memory.activeEntity.tabla;
+    if (tenantIntent && memory.activeTenant) {
+      input.id = memory.activeTenant.id;
+      input.tabla = "tenants";
+    } else if (propertyIntent && memory.activeProperty) {
+      input.id = memory.activeProperty.id;
+      input.tabla = "properties";
+    } else if (preferredEntity) {
+      input.id = preferredEntity.id;
+      input.tabla = preferredEntity.tabla;
     } else if (memory.activeProperty) {
       input.id = memory.activeProperty.id;
       input.tabla = memory.activeProperty.tabla;
@@ -744,6 +1210,63 @@ function patchToolInputWithMemory(
   }
 
   return input;
+}
+
+async function executeSafeTool(
+  toolUse: Anthropic.ToolUseBlock,
+  memory: AgentMemory,
+  latestUserText: string,
+  userId: string
+): Promise<unknown> {
+  const patchedInput = patchToolInputWithMemory(toolUse, memory, latestUserText);
+  const tenantIntent = mentionsTenant(latestUserText) || asksPersonalAttribute(latestUserText);
+  const propertyIntent = mentionsProperty(latestUserText) || asksPropertyAttribute(latestUserText);
+  const contractIntent = mentionsContract(latestUserText);
+
+  if (toolUse.name === "actualizar_campo") {
+    const tabla = typeof patchedInput.tabla === "string" ? patchedInput.tabla : null;
+
+    if (tenantIntent && tabla !== "tenants") {
+      return { error: "Necesito confirmar primero cual inquilino quieres cambiar." };
+    }
+
+    if (propertyIntent && tabla !== "properties") {
+      return { error: "Necesito confirmar primero cual propiedad quieres cambiar." };
+    }
+
+    if (contractIntent && tabla !== "contracts") {
+      return { error: "Necesito confirmar primero cual contrato quieres cambiar." };
+    }
+
+    const prepared = await prepareUpdateCampo(patchedInput, userId);
+    if ("error" in prepared) {
+      return prepared;
+    }
+
+    return {
+      pending_confirmation: true,
+      tabla: prepared.tabla,
+      id: prepared.id,
+      campo: prepared.campo,
+      valor: prepared.valor,
+      valor_anterior: prepared.valorAnterior,
+      nombre: prepared.nombreRegistro || undefined,
+    };
+  }
+
+  if (toolUse.name === "obtener_detalle_entidad") {
+    const tabla = typeof patchedInput.tabla === "string" ? patchedInput.tabla : null;
+
+    if (tenantIntent && tabla !== "tenants") {
+      return { error: "Necesito confirmar primero a que inquilino te refieres." };
+    }
+
+    if (propertyIntent && tabla !== "properties") {
+      return { error: "Necesito confirmar primero a que propiedad te refieres." };
+    }
+  }
+
+  return executeTool(toolUse.name, patchedInput, userId);
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -773,6 +1296,94 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const latestUserText =
       [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
 
+    if (memory.pendingMutation) {
+      if (shouldConfirmPendingChange(latestUserText)) {
+        const executed = await executeTool(
+          "actualizar_campo",
+          {
+            tabla: memory.pendingMutation.tabla,
+            id: memory.pendingMutation.id,
+            campo: memory.pendingMutation.campo,
+            valor: memory.pendingMutation.valor,
+          },
+          user.id
+        );
+
+        const executedResult =
+          typeof executed === "object" && executed !== null
+            ? (executed as Record<string, unknown>)
+            : null;
+
+      const nextMemory: AgentMemory =
+        executedResult?.ok === true
+          ? {
+                activeEntity: memory.activeEntity ?? null,
+                activeTenant: memory.activeTenant ?? null,
+                activeProperty: memory.activeProperty ?? null,
+                activeContract: memory.activeContract ?? null,
+                pendingMutation: null,
+                lastMutation: {
+                  tabla: memory.pendingMutation.tabla,
+                  id: memory.pendingMutation.id,
+                  campo: memory.pendingMutation.campo,
+                  valorAnterior: memory.pendingMutation.valorAnterior,
+                  valorNuevo: memory.pendingMutation.valor,
+                  nombre: memory.pendingMutation.nombre,
+                },
+              }
+            : { ...memory, pendingMutation: null };
+
+        await logAgentUsage({
+          userId: user.id,
+          messageCount: messages.length,
+          toolCallsCount: 1,
+          inputTokens: 0,
+          outputTokens: 0,
+          model: MODEL,
+          stopReason: "pending_confirmation",
+          hadError: executedResult?.ok !== true,
+        });
+
+        return NextResponse.json({
+          message:
+            executedResult?.ok === true
+              ? `Cambio aplicado en ${
+                  memory.pendingMutation.tabla === "tenants"
+                    ? `inquilino ${memory.pendingMutation.nombre ?? ""}`.trim()
+                    : memory.pendingMutation.tabla === "properties"
+                      ? `propiedad ${memory.pendingMutation.nombre ?? ""}`.trim()
+                      : `contrato ${memory.pendingMutation.nombre ?? ""}`.trim()
+                }. ${memory.pendingMutation.campo} actualizado a "${memory.pendingMutation.valor}".`
+              : typeof executedResult?.error === "string"
+                ? executedResult.error
+                : "No pude aplicar el cambio.",
+          input_tokens: 0,
+          output_tokens: 0,
+          memory: nextMemory,
+        });
+      }
+
+      if (shouldCancelPendingChange(latestUserText)) {
+        await logAgentUsage({
+          userId: user.id,
+          messageCount: messages.length,
+          toolCallsCount: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          model: MODEL,
+          stopReason: "pending_cancelled",
+          hadError: false,
+        });
+
+        return NextResponse.json({
+          message: "Listo, no hice ningun cambio.",
+          input_tokens: 0,
+          output_tokens: 0,
+          memory: { ...memory, pendingMutation: null },
+        });
+      }
+    }
+
     if (shouldRevertLastChange(latestUserText) && memory.lastMutation) {
       const reverted = await executeTool(
         "actualizar_campo",
@@ -794,7 +1405,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         revertedResult?.ok === true
           ? {
               activeEntity: memory.activeEntity ?? null,
+              activeTenant: memory.activeTenant ?? null,
               activeProperty: memory.activeProperty ?? null,
+              activeContract: memory.activeContract ?? null,
+              pendingMutation: null,
               lastMutation: {
                 tabla: memory.lastMutation.tabla,
                 id: memory.lastMutation.id,
@@ -805,6 +1419,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
               },
             }
           : memory;
+
+      await logAgentUsage({
+        userId: user.id,
+        messageCount: messages.length,
+        toolCallsCount: 1,
+        inputTokens: 0,
+        outputTokens: 0,
+        model: MODEL,
+        stopReason: "revert",
+        hadError: revertedResult?.ok !== true,
+      });
 
       return NextResponse.json({
         message:
@@ -861,6 +1486,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       lastResponse = response;
 
       if (response.stop_reason !== "tool_use") {
+        await logAgentUsage({
+          userId: user.id,
+          messageCount: messages.length,
+          toolCallsCount: 0,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          model: MODEL,
+          stopReason: response.stop_reason ?? null,
+          hadError: false,
+        });
+
         return NextResponse.json({
           message: getTextContent(response.content),
           input_tokens: totalInputTokens,
@@ -871,6 +1507,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
       const toolUses = getToolUses(response.content);
       if (toolUses.length === 0) {
+        await logAgentUsage({
+          userId: user.id,
+          messageCount: messages.length,
+          toolCallsCount: 0,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          model: MODEL,
+          stopReason: "tool_use_empty",
+          hadError: true,
+        });
+
         return NextResponse.json({
           message: "No pude completar la accion.",
           input_tokens: totalInputTokens,
@@ -882,11 +1529,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const toolResults = await Promise.all(
         toolUses.map(async (toolUse) => ({
           toolUse,
-          result: await executeTool(
-            toolUse.name,
-            patchToolInputWithMemory(toolUse, nextMemory),
-            user.id
-          ),
+          result: await executeSafeTool(toolUse, nextMemory, latestUserText, user.id),
         }))
       );
 
@@ -894,6 +1537,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
       const mutationResponse = formatMutationToolResponse(toolResults);
       if (mutationResponse) {
+        await logAgentUsage({
+          userId: user.id,
+          messageCount: messages.length,
+          toolCallsCount: toolResults.length,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          model: MODEL,
+          stopReason: "mutation_direct",
+          hadError: mutationResponse.toLowerCase().includes("error"),
+        });
+
         return NextResponse.json({
           message: mutationResponse,
           input_tokens: totalInputTokens,
@@ -905,10 +1559,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (toolResults.length === 1) {
         const directResponse = formatDirectToolResponse(
           toolResults[0].toolUse.name,
-          toolResults[0].result
+          toolResults[0].result,
+          latestUserText
         );
 
         if (directResponse) {
+          await logAgentUsage({
+            userId: user.id,
+            messageCount: messages.length,
+            toolCallsCount: 1,
+            inputTokens: totalInputTokens,
+            outputTokens: totalOutputTokens,
+            model: MODEL,
+            stopReason: "tool_direct",
+            hadError: directResponse.toLowerCase().includes("error"),
+          });
+
           return NextResponse.json({
             message: directResponse,
             input_tokens: totalInputTokens,
@@ -935,6 +1601,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ];
     }
 
+    await logAgentUsage({
+      userId: user.id,
+      messageCount: messages.length,
+      toolCallsCount: 0,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      model: MODEL,
+      stopReason: "max_iterations",
+      hadError: true,
+    });
+
     return NextResponse.json({
       message: lastResponse ? getTextContent(lastResponse.content) : "No pude completar la accion.",
       input_tokens: totalInputTokens,
@@ -943,6 +1620,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
   } catch (error) {
     console.error("[agent] Request failed:", error);
+    try {
+      const supabase = await createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        await logAgentUsage({
+          userId: user.id,
+          messageCount: 0,
+          toolCallsCount: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          model: MODEL,
+          stopReason: "request_error",
+          hadError: true,
+        });
+      }
+    } catch {
+      // Ignore secondary logging failures.
+    }
     return NextResponse.json(
       { error: "No se pudo procesar la solicitud del agente." },
       { status: 500 }

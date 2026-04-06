@@ -7,6 +7,15 @@ export interface Property {
   address: string; areaMt2: number; bedrooms: number; bathrooms: number; estrato: number;
   purchasePrice: number; currentRent: number; adminFee: number; predialAnnual: number;
   capRate: number; status: "occupied" | "vacant"; tenant: string | null; notes: string;
+  additionalContacts: AdditionalContact[];
+}
+
+export interface AdditionalContact {
+  id: string;
+  label: string;
+  name: string;
+  phone: string;
+  email: string;
 }
 
 export interface Tenant {
@@ -128,6 +137,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       address: p.address, area_m2: p.areaMt2, bedrooms: p.bedrooms, bathrooms: p.bathrooms,
       estrato: p.estrato, commercial_value: p.purchasePrice, current_rent: p.currentRent,
       admin_fee: p.adminFee, predial_annual: p.predialAnnual, notes: p.notes, status: p.status,
+      additional_contacts: p.additionalContacts,
     });
     const prop: Property = {
       ...p, id: dbRow.id,
@@ -153,6 +163,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (data.adminFee !== undefined) dbData.admin_fee = data.adminFee;
     if (data.predialAnnual !== undefined) dbData.predial_annual = data.predialAnnual;
     if (data.notes !== undefined) dbData.notes = data.notes;
+    if (data.additionalContacts !== undefined) dbData.additional_contacts = data.additionalContacts;
     if (data.status !== undefined) dbData.status = data.status;
     await svc.updateProperty(id, dbData);
     set(s => ({

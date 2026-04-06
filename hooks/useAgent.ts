@@ -13,6 +13,29 @@ type AgentMemory = {
     id: string;
     nombre: string;
   } | null;
+  activeTenant?: {
+    tabla: "tenants";
+    id: string;
+    nombre: string;
+  } | null;
+  activeProperty?: {
+    tabla: "properties";
+    id: string;
+    nombre: string;
+  } | null;
+  activeContract?: {
+    tabla: "contracts";
+    id: string;
+    nombre: string;
+  } | null;
+  pendingMutation?: {
+    tabla: "tenants" | "properties" | "contracts";
+    id: string;
+    campo: string;
+    valor: string;
+    valorAnterior: string;
+    nombre?: string;
+  } | null;
   lastMutation?: {
     tabla: "tenants" | "properties" | "contracts";
     id: string;
