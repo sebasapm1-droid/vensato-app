@@ -4,20 +4,26 @@ import { Button } from '@/components/ui/button'
 import { PlanConfig, Tier } from '@/lib/plans'
 
 export const FEATURE_LABELS: Partial<Record<keyof PlanConfig, string>> = {
-  hasWompiCobros: 'Cobros automáticos a inquilinos',
-  hasBovedaDocs: 'Bóveda de documentos',
+  hasAgent: 'Asistente Vensato',
+  hasChargeEmailManual: 'Envio manual de cuentas de cobro',
+  hasChargeEmailAutomatic: 'Envio automatico de cuentas de cobro',
+  hasWompiCobros: 'Cobros automaticos a inquilinos',
+  hasBovedaDocs: 'Boveda de documentos',
   hasNOI: 'Tableros de rentabilidad y NOI',
   hasReportesAvanzados: 'Reportes financieros avanzados',
-  hasEmailRecordatorios: 'Recordatorios automáticos por email',
+  hasEmailRecordatorios: 'Recordatorios automaticos por email',
   hasWhatsappRecordatorios: 'Recordatorios por WhatsApp',
-  hasDIAN: 'Facturación electrónica DIAN',
-  hasCopropiedad: 'División de copropiedad',
-  hasExportacionContable: 'Exportación contable avanzada',
+  hasDIAN: 'Facturacion electronica DIAN',
+  hasCopropiedad: 'Division de copropiedad',
+  hasExportacionContable: 'Exportacion contable avanzada',
   hasMultiUsuario: 'Usuarios adicionales en el workspace',
-  maxProperties: 'Más propiedades en tu portafolio',
+  maxProperties: 'Mas propiedades en tu portafolio',
 }
 
 export const FEATURE_REQUIRED_TIER: Partial<Record<keyof PlanConfig, Tier>> = {
+  hasAgent: 'inicio',
+  hasChargeEmailManual: 'inicio',
+  hasChargeEmailAutomatic: 'portafolio',
   hasWompiCobros: 'inicio',
   hasBovedaDocs: 'inicio',
   hasNOI: 'portafolio',
@@ -45,17 +51,17 @@ interface UpgradeModalProps {
 
 export function UpgradeModal({ feature, onClose }: UpgradeModalProps) {
   const router = useRouter()
-  const label = FEATURE_LABELS[feature] ?? 'esta función'
+  const label = FEATURE_LABELS[feature] ?? 'esta funcion'
   const requiredTier = FEATURE_REQUIRED_TIER[feature]
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-vensato-surface border border-vensato-border-subtle rounded-2xl p-8 max-w-sm w-full mx-4 space-y-5 shadow-xl">
         <div className="space-y-2 text-center">
-          <div className="text-3xl">🔒</div>
-          <h2 className="font-heading font-bold text-xl text-vensato-text-main">Función bloqueada</h2>
+          <div className="text-3xl">Bloqueado</div>
+          <h2 className="font-heading font-bold text-xl text-vensato-text-main">Funcion bloqueada</h2>
           <p className="text-sm text-vensato-text-secondary">
-            <span className="font-semibold text-vensato-text-main">{label}</span> está disponible desde el plan{' '}
+            <span className="font-semibold text-vensato-text-main">{label}</span> esta disponible desde el plan{' '}
             {requiredTier && (
               <span className="font-semibold text-vensato-brand-primary">{TIER_NAMES[requiredTier]}</span>
             )}.

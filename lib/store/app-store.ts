@@ -307,7 +307,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   // ── Charges ──
   addCharge: async (c) => {
+    const tenant = get().tenants.find(t => t.id === c.tenantId);
     const dbRow = await svc.createCharge({
+      property_id: tenant?.propertyId || null,
       tenant_id: c.tenantId || null,
       concept: c.concept, amount: c.amount,
       due_date: c.dueDate, status: "pending",

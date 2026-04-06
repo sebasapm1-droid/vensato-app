@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
+import { extractTextFromPDF } from "@/lib/document-extractor";
 import { uploadFile } from "@/lib/r2";
 import { requireFeature } from "@/lib/middleware/requirePlan";
 import { getPlan } from "@/lib/permissions";
@@ -81,12 +83,37 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       r2_key: key,
       tamanio_bytes: file.size,
     })
-    .select()
+    .select("id, user_id, propiedad_id, tipo, nombre_original, r2_key, tamanio_bytes, created_at")
     .single();
 
   if (error) {
     console.error("[upload] Supabase error:", error);
     return NextResponse.json({ error: "No se pudo guardar el documento" }, { status: 500 });
+  }
+
+  if (/\.pdf$/i.test(file.name)) {
+    void (async () => {
+      const textoExtraido = await extractTextFromPDF(key);
+
+      if (textoExtraido === null) {
+        return;
+      }
+
+      try {
+        const serviceSupabase = createServiceClient();
+        const { error: updateError } = await serviceSupabase
+          .from("documentos")
+          .update({ texto_extraido: textoExtraido })
+          .eq("id", data.id)
+          .eq("user_id", user.id);
+
+        if (updateError) {
+          console.error("[upload] Extraction update error:", updateError);
+        }
+      } catch (backgroundError) {
+        console.error("[upload] Background extraction error:", backgroundError);
+      }
+    })();
   }
 
   return NextResponse.json(data, { status: 201 });

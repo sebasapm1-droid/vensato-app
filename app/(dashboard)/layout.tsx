@@ -1,5 +1,6 @@
 import { Sidebar } from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
+import { AgentChat } from "@/components/AgentChat";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { DataProvider } from "@/components/providers/DataProvider";
@@ -28,6 +29,7 @@ export default async function DashboardLayout({
             </DataProvider>
           </div>
         </main>
+        <AgentChat />
       </div>
     </div>
   );

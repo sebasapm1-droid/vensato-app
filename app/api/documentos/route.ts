@@ -12,7 +12,7 @@ export async function GET(_req: NextRequest): Promise<NextResponse> {
 
   const { data, error } = await supabase
     .from("documentos")
-    .select("*")
+    .select("id, user_id, propiedad_id, tipo, nombre_original, r2_key, tamanio_bytes, created_at")
     .order("created_at", { ascending: false });
 
   if (error) {

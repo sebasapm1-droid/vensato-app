@@ -29,6 +29,7 @@ const TIER_DESC: Record<Tier, string> = {
 const FEATURES: { label: string; key: keyof typeof PLANS["base"] }[] = [
   { label: "Propiedades", key: "maxProperties" },
   { label: "Usuarios", key: "maxUsers" },
+  { label: "Asistente Vensato", key: "hasAgent" },
   { label: "Bóveda de documentos", key: "hasBovedaDocs" },
   { label: "Cobros automáticos (Wompi)", key: "hasWompiCobros" },
   { label: "Reportes avanzados", key: "hasReportesAvanzados" },

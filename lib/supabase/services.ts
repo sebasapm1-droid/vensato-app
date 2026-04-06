@@ -4,6 +4,76 @@
  */
 import { createClient } from "@/lib/supabase/client";
 
+type PropertyRow = {
+  id: string;
+  alias: string;
+  type: string | null;
+  city: string | null;
+  neighborhood: string | null;
+  address: string | null;
+  area_m2: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  estrato: number | null;
+  commercial_value: number | null;
+  current_rent: number | null;
+  admin_fee: number | null;
+  predial_annual: number | null;
+  notes: string | null;
+  status: string | null;
+};
+
+type TenantRow = {
+  id: string;
+  full_name: string;
+  cedula: string | null;
+  email: string | null;
+  phone: string | null;
+  property_id: string | null;
+  properties?: { alias: string | null } | null;
+};
+
+type ChargeRow = {
+  id: string;
+  tenant_id: string | null;
+  concept: string;
+  amount: number;
+  due_date: string;
+  status: string | null;
+  tenants?: { full_name: string | null } | null;
+  properties?: { alias: string | null } | null;
+};
+
+type ContractRow = {
+  id: string;
+  property_id: string | null;
+  tenant_id: string | null;
+  start_date: string;
+  end_date: string | null;
+  duration_months: number | null;
+  current_rent: number;
+  increment_type: string | null;
+  status: string | null;
+  created_at: string | null;
+  tenants?: { full_name: string | null; cedula: string | null } | null;
+  properties?: { alias: string | null } | null;
+};
+
+type DocumentRow = {
+  id: string;
+  user_id: string | null;
+  property_id: string | null;
+  tenant_id: string | null;
+  type: string | null;
+  name: string;
+  file_url: string;
+  file_size: number | null;
+  mime_type: string | null;
+  uploaded_at: string | null;
+  tenants?: { full_name: string | null } | null;
+  properties?: { alias: string | null } | null;
+};
+
 // ─── Profile ──────────────────────────────────────────────────────────────────
 export async function getProfile(userId?: string) {
   const sb = createClient();
@@ -34,23 +104,23 @@ export async function getProperties() {
     .select("id,alias,type,city,neighborhood,address,area_m2,bedrooms,bathrooms,estrato,commercial_value,current_rent,admin_fee,predial_annual,notes,status")
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as PropertyRow[];
 }
 
-export async function createProperty(property: Record<string, any>) {
+export async function createProperty(property: Record<string, unknown>) {
   const sb = createClient();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) throw new Error("Not authenticated");
   const { data, error } = await sb.from("properties").insert({ ...property, user_id: user.id }).select().single();
   if (error) throw error;
-  return data;
+  return data as PropertyRow;
 }
 
-export async function updateProperty(id: string, property: Record<string, any>) {
+export async function updateProperty(id: string, property: Record<string, unknown>) {
   const sb = createClient();
   const { data, error } = await sb.from("properties").update(property).eq("id", id).select().single();
   if (error) throw error;
-  return data;
+  return data as PropertyRow;
 }
 
 export async function deleteProperty(id: string) {
@@ -67,19 +137,19 @@ export async function getTenants() {
     .select("id,full_name,cedula,email,phone,property_id,properties(alias)")
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as TenantRow[];
 }
 
-export async function createTenant(tenant: Record<string, any>) {
+export async function createTenant(tenant: Record<string, unknown>) {
   const sb = createClient();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) throw new Error("Not authenticated");
   const { data, error } = await sb.from("tenants").insert({ ...tenant, user_id: user.id }).select("*, properties(alias)").single();
   if (error) throw error;
-  return data;
+  return data as TenantRow;
 }
 
-export async function updateTenant(id: string, data: Record<string, any>) {
+export async function updateTenant(id: string, data: Record<string, unknown>) {
   const sb = createClient();
   const { error } = await sb.from("tenants").update(data).eq("id", id);
   if (error) throw error;
@@ -99,23 +169,23 @@ export async function getCharges() {
     .select("id,tenant_id,concept,amount,due_date,status,tenants(full_name),properties(alias)")
     .order("due_date", { ascending: true });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as ChargeRow[];
 }
 
-export async function createCharge(charge: Record<string, any>) {
+export async function createCharge(charge: Record<string, unknown>) {
   const sb = createClient();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) throw new Error("Not authenticated");
   const { data, error } = await sb.from("charges").insert({ ...charge, user_id: user.id }).select().single();
   if (error) throw error;
-  return data;
+  return data as ChargeRow;
 }
 
 export async function updateChargeStatus(id: string, status: string) {
   const sb = createClient();
   const { data, error } = await sb.from("charges").update({ status }).eq("id", id).select().single();
   if (error) throw error;
-  return data;
+  return data as ChargeRow;
 }
 
 export async function deleteCharge(id: string) {
@@ -132,16 +202,16 @@ export async function getContracts() {
     .select("id,property_id,tenant_id,start_date,end_date,duration_months,current_rent,increment_type,status,created_at,tenants(full_name,cedula),properties(alias)")
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as ContractRow[];
 }
 
-export async function createContract(contract: Record<string, any>) {
+export async function createContract(contract: Record<string, unknown>) {
   const sb = createClient();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) throw new Error("Not authenticated");
   const { data, error } = await sb.from("contracts").insert({ ...contract, user_id: user.id }).select().single();
   if (error) throw error;
-  return data;
+  return data as ContractRow;
 }
 
 export async function deleteContract(id: string) {
@@ -158,7 +228,7 @@ export async function getDocuments() {
     .select("*, tenants(full_name), properties(alias)")
     .order("uploaded_at", { ascending: false });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as DocumentRow[];
 }
 
 export async function uploadDocument(params: {
@@ -203,7 +273,7 @@ export async function uploadDocument(params: {
   }).select().single();
 
   if (dbError) throw dbError;
-  return data;
+  return data as DocumentRow;
 }
 
 export async function deleteDocument(id: string, fileUrl: string) {

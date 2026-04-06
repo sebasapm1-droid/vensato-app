@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/renew-subscriptions",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/send-charge-emails",
+      "schedule": "0 8 * * *"
     }
   ]
 }

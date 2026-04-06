@@ -3,6 +3,9 @@ export type Tier = 'base' | 'inicio' | 'portafolio' | 'patrimonio'
 export interface PlanConfig {
   maxProperties: number         // -1 = ilimitado
   maxUsers: number
+  hasAgent: boolean
+  hasChargeEmailManual: boolean
+  hasChargeEmailAutomatic: boolean
   hasWompiCobros: boolean
   hasBovedaDocs: boolean
   hasNOI: boolean
@@ -20,6 +23,9 @@ export interface PlanConfig {
 export const PLANS: Record<Tier, PlanConfig> = {
   base: {
     maxProperties: 2, maxUsers: 1,
+    hasAgent: false,
+    hasChargeEmailManual: false,
+    hasChargeEmailAutomatic: false,
     hasWompiCobros: false, hasBovedaDocs: false, hasNOI: false,
     hasReportesAvanzados: false, hasEmailRecordatorios: false,
     hasWhatsappRecordatorios: false, hasDIAN: false, hasCopropiedad: false,
@@ -28,6 +34,9 @@ export const PLANS: Record<Tier, PlanConfig> = {
   },
   inicio: {
     maxProperties: 5, maxUsers: 1,
+    hasAgent: true,
+    hasChargeEmailManual: true,
+    hasChargeEmailAutomatic: false,
     hasWompiCobros: true, hasBovedaDocs: true, hasNOI: false,
     hasReportesAvanzados: false, hasEmailRecordatorios: false,
     hasWhatsappRecordatorios: false, hasDIAN: false, hasCopropiedad: false,
@@ -36,6 +45,9 @@ export const PLANS: Record<Tier, PlanConfig> = {
   },
   portafolio: {
     maxProperties: 15, maxUsers: 1,
+    hasAgent: true,
+    hasChargeEmailManual: true,
+    hasChargeEmailAutomatic: true,
     hasWompiCobros: true, hasBovedaDocs: true, hasNOI: true,
     hasReportesAvanzados: true, hasEmailRecordatorios: true,
     hasWhatsappRecordatorios: false, hasDIAN: false, hasCopropiedad: false,
@@ -44,6 +56,9 @@ export const PLANS: Record<Tier, PlanConfig> = {
   },
   patrimonio: {
     maxProperties: -1, maxUsers: 4,
+    hasAgent: true,
+    hasChargeEmailManual: true,
+    hasChargeEmailAutomatic: true,
     hasWompiCobros: true, hasBovedaDocs: true, hasNOI: true,
     hasReportesAvanzados: true, hasEmailRecordatorios: true,
     hasWhatsappRecordatorios: true, hasDIAN: true, hasCopropiedad: true,
