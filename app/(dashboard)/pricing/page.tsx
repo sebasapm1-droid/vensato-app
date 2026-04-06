@@ -30,6 +30,7 @@ type PricingFeature = {
   label: string;
   enabled: (tier: Tier) => boolean;
   value?: (tier: Tier) => string | null;
+  highlight?: boolean;
 };
 
 const FEATURES: PricingFeature[] = [
@@ -37,6 +38,11 @@ const FEATURES: PricingFeature[] = [
     label: "Propiedades",
     enabled: () => true,
     value: (tier) => (PLANS[tier].maxProperties === -1 ? "Ilimitadas" : String(PLANS[tier].maxProperties)),
+  },
+  {
+    label: "Asistente Vensato",
+    enabled: (tier) => tier !== "base",
+    highlight: true,
   },
   { label: "Gestión de propiedades", enabled: () => true },
   { label: "Gestión de inquilinos", enabled: () => true },
@@ -113,12 +119,10 @@ export default function PricingPage() {
             description: "Tu suscripcion sigue activa hasta el fin del periodo.",
           });
           setTimeout(() => window.location.reload(), 1500);
+        } else if (data.error?.includes("vencio")) {
+          await checkoutUpgrade(tier);
         } else {
-          if (data.error?.includes("vencio")) {
-            await checkoutUpgrade(tier);
-          } else {
-            toast.error(data.error ?? "No se pudo reactivar.");
-          }
+          toast.error(data.error ?? "No se pudo reactivar.");
         }
         return;
       }
@@ -225,12 +229,13 @@ export default function PricingPage() {
           return (
             <Card
               key={tier}
-              className={`relative flex flex-col overflow-visible rounded-2xl border p-6 shadow-sm ${isCurrent
+              className={`relative flex flex-col overflow-visible rounded-2xl border p-6 shadow-sm ${
+                isCurrent
                   ? "border-vensato-brand-primary ring-2 ring-vensato-brand-primary bg-vensato-surface"
                   : isPending
                     ? "border-amber-300 bg-vensato-surface"
                     : "border-vensato-border-subtle bg-vensato-surface"
-                }`}
+              }`}
             >
               {isPopular && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
@@ -275,15 +280,16 @@ export default function PricingPage() {
               </div>
 
               <div className="mb-6 flex-1 space-y-2.5">
-                {FEATURES.map(({ label, enabled, value }) => {
+                {FEATURES.map(({ label, enabled, value, highlight }) => {
                   const active = enabled(tier);
                   const featureValue = value?.(tier) ?? null;
 
                   return (
                     <div
                       key={label}
-                      className={`flex items-center gap-2 text-sm ${active ? "text-vensato-text-main" : "text-vensato-text-secondary opacity-40"
-                        }`}
+                      className={`flex items-center gap-2 text-sm ${
+                        active ? "text-vensato-text-main" : "text-vensato-text-secondary opacity-40"
+                      }`}
                     >
                       <Check className={`h-4 w-4 shrink-0 ${active ? "text-vensato-brand-primary" : "opacity-30"}`} />
                       <span>
@@ -291,6 +297,10 @@ export default function PricingPage() {
                           <>
                             <span className="font-semibold">{featureValue}</span> {label}
                           </>
+                        ) : highlight && active ? (
+                          <span className="rounded-full bg-vensato-brand-primary/10 px-2.5 py-1 font-semibold text-vensato-brand-primary">
+                            {label}
+                          </span>
                         ) : (
                           label
                         )}
@@ -303,14 +313,15 @@ export default function PricingPage() {
               <Button
                 onClick={() => handleTierChange(tier)}
                 disabled={isButtonDisabled(tier)}
-                className={`w-full font-semibold ${isCurrent
+                className={`w-full font-semibold ${
+                  isCurrent
                     ? "cursor-default bg-vensato-brand-primary/20 text-vensato-brand-primary"
                     : isPending
                       ? "cursor-default bg-amber-100 text-amber-700"
                       : tier === "base"
                         ? "cursor-default border border-vensato-border-subtle bg-vensato-base text-vensato-text-secondary"
                         : "bg-vensato-brand-primary text-white hover:bg-[#5C7D6E]"
-                  }`}
+                }`}
               >
                 {getButtonLabel(tier)}
               </Button>
