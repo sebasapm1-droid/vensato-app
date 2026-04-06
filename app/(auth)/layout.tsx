@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 export default function AuthLayout({
@@ -9,8 +10,15 @@ export default function AuthLayout({
     <div className="min-h-screen bg-vensato-base flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-           <Link href="/">
-             <h1 className="font-heading font-bold text-4xl text-vensato-text-main">Vensato</h1>
+           <Link href="/" className="inline-flex">
+             <Image
+               src="/branding/Vensato%20Logo%20SVG.svg"
+               alt="Vensato"
+               width={208}
+               height={44}
+               className="h-10 w-auto"
+               priority
+             />
            </Link>
         </div>
         <div className="bg-vensato-surface shadow-xl rounded-2xl p-8 border border-vensato-border-subtle">

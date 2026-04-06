@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -41,8 +42,15 @@ export function Sidebar() {
   return (
     <aside className="w-64 bg-vensato-surface shadow-sm hidden lg:flex flex-col border-r border-vensato-border-subtle">
       <div className="p-6">
-        <Link href="/">
-          <h1 className="font-heading font-bold text-2xl text-vensato-text-main">Vensato</h1>
+        <Link href="/" className="inline-flex">
+          <Image
+            src="/branding/Vensato%20Logo%20SVG.svg"
+            alt="Vensato"
+            width={168}
+            height={36}
+            className="h-8 w-auto"
+            priority
+          />
         </Link>
       </div>
 

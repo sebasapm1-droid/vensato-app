@@ -9,7 +9,11 @@ const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-ui" })
 export const metadata: Metadata = {
   title: "Vensato App",
   description: "PMS para Inversionistas Inmobiliarios Independientes",
-  icons: { icon: "/vensato-favicon.ico" },
+  icons: {
+    icon: "/branding/Vensato%20Favicon%20SVG.svg",
+    shortcut: "/branding/Vensato%20Favicon%20SVG.svg",
+    apple: "/branding/Vensato%20Favicon%20SVG.svg",
+  },
 };
 
 export default function RootLayout({
